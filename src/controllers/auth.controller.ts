@@ -27,9 +27,20 @@ export const signup = async (
   next: NextFunction
 ): Promise<void> => {
   try {
-    const { username, name, email, password } = req.body;
+    const {
+      username,
+      name,
+      email,
+      password,
+      role,
+    } = req.body;
 
-    if (!username || !name || !email || !password) {
+    if (
+      !username ||
+      !name ||
+      !email ||
+      !password
+    ) {
       throw new AppError(
         'username, name, email, and password are required.',
         422,
@@ -53,10 +64,32 @@ export const signup = async (
       );
     }
 
+    const allowedRoles = [
+      'super_admin',
+      'space_admin',
+      'member',
+      'guest',
+    ];
+
+    if (
+      role &&
+      !allowedRoles.includes(role)
+    ) {
+      throw new AppError(
+        'Invalid role.',
+        422,
+        'INVALID_ROLE'
+      );
+    }
+
     const usernameTaken = await User.findOne({
       username: username.toLowerCase(),
     });
-    if (usernameTaken && usernameTaken.isVerified) {
+
+    if (
+      usernameTaken &&
+      usernameTaken.isVerified
+    ) {
       throw new AppError(
         'This username is already taken.',
         409,
@@ -64,8 +97,14 @@ export const signup = async (
       );
     }
 
-    const existing = await User.findOne({ email });
-    if (existing && existing.isVerified) {
+    const existing = await User.findOne({
+      email,
+    });
+
+    if (
+      existing &&
+      existing.isVerified
+    ) {
       throw new AppError(
         'An account with this email already exists.',
         409,
@@ -75,17 +114,36 @@ export const signup = async (
 
     const hashed = await hashPassword(password);
 
-    if (existing && !existing.isVerified) {
-      existing.username = username.toLowerCase();
+    if (
+      existing &&
+      !existing.isVerified
+    ) {
+      existing.username =
+        username.toLowerCase();
+
       existing.name = name;
+
       existing.password = hashed;
+
+      existing.role =
+        role || 'member';
+
       await existing.save();
+
     } else {
+
       await User.create({
-        username: username.toLowerCase(),
+        username:
+          username.toLowerCase(),
+
         name,
+
         email,
+
         password: hashed,
+
+        role: role || 'member',
+
         isVerified: false,
       });
     }
@@ -94,7 +152,10 @@ export const signup = async (
 
     sendSuccess(
       res,
-      { message: 'OTP sent to email. Please verify to complete signup.' },
+      {
+        message:
+          'OTP sent to email. Please verify to complete signup.',
+      },
       201
     );
   } catch (err) {

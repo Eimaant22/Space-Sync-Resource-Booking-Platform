@@ -19,17 +19,18 @@ Unless noted otherwise, all request/response bodies are `application/json`, and 
 
 Creates an unverified user account and sends a 6-digit OTP to the provided email. The account cannot be used until the OTP is verified via [1.2 Verify OTP](#12-verify-otp).
 
-**Endpoint:** `POST /api/auth/signup`
+**Endpoint:** `POST /api/auth/signup`  
 **Auth required:** No
 
 **Body Parameters**
 
-| Field      | Type   | Required | Description                                                  |
-| ---------- | ------ | -------- | ------------------------------------------------------------ |
-| `username` | string | Yes      | Unique handle — 3–20 chars, letters/numbers/underscores only |
-| `name`     | string | Yes      | Display name (freely changeable later)                       |
-| `email`    | string | Yes      | Unique email address                                         |
-| `password` | string | Yes      | Minimum 8 characters                                         |
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `username` | string | Yes | Unique handle — 3–20 characters, letters, numbers, and underscores only |
+| `name` | string | Yes | User's full/display name |
+| `email` | string | Yes | Unique email address |
+| `password` | string | Yes | Minimum 8 characters |
+| `role` | string | No | User role. Allowed values: `super_admin`, `space_admin`, `member`, `guest`. Defaults to `member` if omitted. |
 
 **Request Example**
 
@@ -38,7 +39,8 @@ Creates an unverified user account and sends a 6-digit OTP to the provided email
   "username": "ayesha_k",
   "name": "Ayesha Khan",
   "email": "ayesha@example.com",
-  "password": "SecurePass123"
+  "password": "SecurePass123",
+  "role": "member"
 }
 ```
 
@@ -77,7 +79,7 @@ Creates an unverified user account and sends a 6-digit OTP to the provided email
 }
 ```
 
-**Fail Response — `422 Unprocessable Entity`**
+**Fail Response — `422 Unprocessable Entity`** (validation error)
 
 ```json
 {
@@ -89,8 +91,23 @@ Creates an unverified user account and sends a 6-digit OTP to the provided email
 }
 ```
 
-> **Note:** If a user signs up with an email that already exists but was never verified, the existing unverified record is overwritten and a fresh OTP is sent.
+**Fail Response — `422 Unprocessable Entity`** (invalid role)
 
+```json
+{
+  "success": false,
+  "error": {
+    "code": "INVALID_ROLE",
+    "message": "Invalid role."
+  }
+}
+```
+
+> **Notes**
+>
+> - If a user signs up using an email that already exists but has **not been verified**, the existing unverified account is updated with the new information, including the provided role, a new password, and a fresh OTP.
+> - If the `role` field is not provided, it automatically defaults to **`member`**.
+> - Allowed roles are: **`super_admin`**, **`space_admin`**, **`member`**, and **`guest`**.
 ---
 
 ### 1.2 Verify OTP
