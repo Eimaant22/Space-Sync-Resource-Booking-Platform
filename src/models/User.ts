@@ -9,8 +9,6 @@ export interface IUser extends Document {
   role: 'super_admin' | 'space_admin' | 'member' | 'guest';
 
   organizationId?: mongoose.Types.ObjectId;
-
-  department?: string;
   photoUrl?: string;
   phone?: string;
 

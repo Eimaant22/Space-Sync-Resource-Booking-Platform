@@ -11,8 +11,6 @@ export interface ISignupRequest extends Document {
 
   role: 'space_admin' | 'member' | 'guest';
 
-  department?: string;
-
   phone?: string;
 
   photoUrl?: string;
