@@ -3,6 +3,7 @@ import { Router } from 'express';
 import {
   createResource,
   getResources,
+  getAvailableResources,   // <-- NEW
   getResourceById,
   updateResource,
   updateResourceStatus,
@@ -52,6 +53,13 @@ router.get(
   '/',
   protect,
   getResources
+);
+
+// NEW API
+router.get(
+  '/available',
+  protect,
+  getAvailableResources
 );
 
 router.get(

@@ -14,7 +14,7 @@ export interface IResource extends Document {
 
   organizationId: mongoose.Types.ObjectId;
 
-  accessGroupId?: mongoose.Types.ObjectId;
+accessGroupId?: mongoose.Types.ObjectId | null;
 
   building?: string;
 
@@ -66,10 +66,11 @@ const ResourceSchema = new Schema<IResource>(
       required: true,
     },
 
-    accessGroupId: {
-      type: Schema.Types.ObjectId,
-      ref: 'AccessGroup',
-    },
+  accessGroupId: {
+  type: Schema.Types.ObjectId,
+  ref: 'AccessGroup',
+  default: null,
+},
 
     building: {
       type: String,

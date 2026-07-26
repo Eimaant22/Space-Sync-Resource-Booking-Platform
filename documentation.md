@@ -3451,6 +3451,95 @@ Since the resource is not permanently removed, historical bookings, reports, and
 - Prevents orphaned bookings by blocking deletion of resources that still have active or upcoming reservations.
 - Maintains a complete audit trail of resource deletion operations.
 ```
+
+### Controller: getAvailableResources
+
+Returns all resources that the currently logged-in user is allowed to access and book.
+
+A resource is included in the response only if:
+
+- It belongs to the user's organization.
+- It is active.
+- It has no access group assigned (**Open to All**), or
+- The logged-in user is a member of the assigned access group.
+
+This endpoint is intended for the booking module so that users only see resources they are authorized to reserve.
+
+**Endpoint:** `GET /api/resources/available`  
+**Auth required:** Yes
+
+**Headers**
+
+| Header | Required | Description |
+|--------|----------|-------------|
+| `Authorization` | Yes | Bearer JWT access token |
+
+**Success Response — `200 OK`**
+
+```json
+{
+  "success": true,
+  "data": {
+    "resources": [
+      {
+        "_id": "687b7bfa3e6b2c1c9c7b1111",
+        "name": "Conference Room A",
+        "type": "room",
+        "building": "Block A",
+        "location": "First Floor",
+        "capacity": 20,
+        "amenities": [
+          "Projector",
+          "Whiteboard"
+        ],
+        "photoUrl": "https://res.cloudinary.com/demo/image/upload/sample.jpg",
+        "requiresApproval": false,
+        "bufferTime": 15,
+        "isActive": true,
+        "accessGroupId": {
+          "_id": "687b7c203e6b2c1c9c7b2001",
+          "name": "Faculty Members"
+        }
+      },
+      {
+        "_id": "687b7bfa3e6b2c1c9c7b1112",
+        "name": "Computer Lab",
+        "type": "lab",
+        "accessGroupId": null
+      }
+    ]
+  }
+}
+```
+
+**Fail Response — `401 Unauthorized`**
+
+```json
+{
+  "success": false,
+  "error": {
+    "code": "UNAUTHENTICATED",
+    "message": "Invalid or expired token."
+  }
+}
+```
+
+**Fail Response — `404 Not Found`**
+
+```json
+{
+  "success": false,
+  "error": {
+    "code": "USER_NOT_FOUND",
+    "message": "User not found."
+  }
+}
+```
+
+> **Notes**
+>
+> - Only active resources are returned.
+> - Resources assigned to an access group are only returned if the logged-in user belongs to that group.
 ---
 # Module 5: Booking Management
 

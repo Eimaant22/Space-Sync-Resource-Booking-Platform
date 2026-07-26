@@ -75,7 +75,11 @@ export const createResource = async (
     }
 
     // Validate Access Group (if provided)
-    if (accessGroupId) {
+    if (
+      accessGroupId !== undefined &&
+      accessGroupId !== null &&
+      accessGroupId !== ''
+    ) {
       if (!mongoose.Types.ObjectId.isValid(accessGroupId)) {
         throw new AppError(
           'Invalid access group id.',
@@ -84,9 +88,8 @@ export const createResource = async (
         );
       }
 
-      const accessGroup = await AccessGroup.findById(
-        accessGroupId
-      );
+      const accessGroup =
+        await AccessGroup.findById(accessGroupId);
 
       if (!accessGroup) {
         throw new AppError(
@@ -111,7 +114,10 @@ export const createResource = async (
 
     const existing = await Resource.findOne({
       name: {
-        $regex: new RegExp(`^${name.trim()}$`, 'i'),
+        $regex: new RegExp(
+          `^${name.trim()}$`,
+          'i'
+        ),
       },
       organizationId: user.organizationId,
     });
@@ -134,7 +140,11 @@ export const createResource = async (
       photoUrl,
       requiresApproval,
       bufferTime,
-      accessGroupId,
+      accessGroupId:
+        accessGroupId === '' ||
+        accessGroupId === null
+          ? null
+          : accessGroupId,
       organizationId: user.organizationId,
       createdBy: user._id,
     });
@@ -183,7 +193,12 @@ export const getResources = async (
       );
     }
 
-    const { search, type } = req.query;
+    const {
+      search,
+      type,
+      building,
+      requiresApproval,
+    } = req.query;
 
     const filter: any = {
       organizationId: user.organizationId,
@@ -192,13 +207,25 @@ export const getResources = async (
 
     if (search) {
       filter.name = {
-        $regex: search,
+        $regex: String(search),
         $options: 'i',
       };
     }
 
     if (type) {
-      filter.type = type;
+      filter.type = String(type).toLowerCase();
+    }
+
+    if (building) {
+      filter.building = {
+        $regex: String(building),
+        $options: 'i',
+      };
+    }
+
+    if (requiresApproval !== undefined) {
+      filter.requiresApproval =
+        requiresApproval === 'true';
     }
 
     const resources = await Resource.find(filter)
@@ -236,7 +263,9 @@ export const getResourceById = async (
       );
     }
 
-    const loggedInUser = await User.findById(req.userId);
+    const loggedInUser = await User.findById(
+      req.userId
+    );
 
     if (!loggedInUser) {
       throw new AppError(
@@ -259,8 +288,6 @@ export const getResourceById = async (
       );
     }
 
-    // Super Admin can access every resource.
-    // Other users can only access resources within their organization.
     if (
       loggedInUser.role !== 'super_admin' &&
       resource.organizationId &&
@@ -281,7 +308,6 @@ export const getResourceById = async (
     next(err);
   }
 };
-
 /**
  * PATCH /api/resources/:id
  * Space Admin
@@ -372,7 +398,8 @@ export const updateResource = async (
     // Validate Capacity
     if (
       capacity !== undefined &&
-      (typeof capacity !== 'number' || capacity < 1)
+      (typeof capacity !== 'number' ||
+        capacity < 1)
     ) {
       throw new AppError(
         'Capacity must be at least 1.',
@@ -381,53 +408,78 @@ export const updateResource = async (
       );
     }
 
-    // Validate Access Group
+  
     if (accessGroupId !== undefined) {
-      if (!mongoose.Types.ObjectId.isValid(accessGroupId)) {
-        throw new AppError(
-          'Invalid access group id.',
-          400,
-          'INVALID_ID'
-        );
-      }
+      if (
+        accessGroupId !== null &&
+        accessGroupId !== ''
+      ) {
+        if (
+          !mongoose.Types.ObjectId.isValid(
+            accessGroupId
+          )
+        ) {
+          throw new AppError(
+            'Invalid access group id.',
+            400,
+            'INVALID_ID'
+          );
+        }
 
-      const accessGroup = await AccessGroup.findOne({
-        _id: accessGroupId,
-        organizationId: user.organizationId,
-      });
+        const accessGroup =
+          await AccessGroup.findOne({
+            _id: accessGroupId,
+            organizationId:
+              user.organizationId,
+          });
 
-      if (!accessGroup) {
-        throw new AppError(
-          'Access group not found.',
-          404,
-          'ACCESS_GROUP_NOT_FOUND'
-        );
+        if (!accessGroup) {
+          throw new AppError(
+            'Access group not found.',
+            404,
+            'ACCESS_GROUP_NOT_FOUND'
+          );
+        }
+
+        resource.accessGroupId =
+          accessGroup._id;
+      } else {
+        
+        resource.accessGroupId = null;
       }
     }
 
     // Update Fields
-    if (name !== undefined) resource.name = name.trim();
+    if (name !== undefined)
+      resource.name = name.trim();
 
-    if (type !== undefined) resource.type = type;
+    if (type !== undefined)
+      resource.type = type;
 
-    if (building !== undefined) resource.building = building;
+    if (building !== undefined)
+      resource.building = building;
 
-    if (location !== undefined) resource.location = location;
+    if (location !== undefined)
+      resource.location = location;
 
-    if (capacity !== undefined) resource.capacity = capacity;
+    if (capacity !== undefined)
+      resource.capacity = capacity;
 
-    if (amenities !== undefined) resource.amenities = amenities;
+    if (amenities !== undefined)
+      resource.amenities = amenities;
 
-    if (photoUrl !== undefined) resource.photoUrl = photoUrl;
+    if (photoUrl !== undefined)
+      resource.photoUrl = photoUrl;
 
-    if (requiresApproval !== undefined)
-      resource.requiresApproval = requiresApproval;
+    if (
+      requiresApproval !== undefined
+    )
+      resource.requiresApproval =
+        requiresApproval;
 
     if (bufferTime !== undefined)
-      resource.bufferTime = bufferTime;
-
-    if (accessGroupId !== undefined)
-      resource.accessGroupId = accessGroupId;
+      resource.bufferTime =
+        bufferTime;
 
     await resource.save();
 
@@ -441,7 +493,8 @@ export const updateResource = async (
     });
 
     sendSuccess(res, {
-      message: 'Resource updated successfully.',
+      message:
+        'Resource updated successfully.',
       resource,
     });
   } catch (err) {
@@ -625,6 +678,67 @@ export const deleteResource = async (
 
     sendSuccess(res, {
       message: 'Resource deleted successfully.',
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+/**
+ * GET /api/resources/available
+ * Logged-in Users
+ */
+export const getAvailableResources = async (
+  req: AuthRequest,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const userId = req.userId!.toString();
+
+    const user = await User.findById(userId);
+
+    if (!user) {
+      throw new AppError(
+        'User not found.',
+        404,
+        'USER_NOT_FOUND'
+      );
+    }
+
+    const groups = await AccessGroup.find({
+      users: user._id,
+    }).select('_id');
+
+    const groupIds = groups.map(group => group._id);
+
+    const resources = await Resource.find({
+      organizationId: user.organizationId,
+      isActive: true,
+      $or: [
+        {
+          accessGroupId: null,
+        },
+        {
+          accessGroupId: {
+            $exists: false,
+          },
+        },
+        {
+          accessGroupId: {
+            $in: groupIds,
+          },
+        },
+      ],
+    })
+      .populate('createdBy', 'name email')
+      .populate('accessGroupId', 'name')
+      .sort({
+        createdAt: -1,
+      });
+
+    sendSuccess(res, {
+      resources,
     });
   } catch (err) {
     next(err);
