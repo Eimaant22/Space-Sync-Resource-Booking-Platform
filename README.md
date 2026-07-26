@@ -36,10 +36,6 @@ Email
 
 Nodemailer
 
-Real-time
-
-[Socket.IO](http://Socket.IO) 4
-
 Other
 
 CORS, dotenv, express-rate-limit
@@ -74,7 +70,7 @@ Loads environment variables, connects to MongoDB and Redis, configures the SMTP 
 
 controllers/
 
-Implements endpoint logic for auth, users, organizations, resources, bookings, approvals, notifications, analytics, and calendar
+Implements endpoint logic for auth, users, organizations, resources, bookings, approvals, notifications,analytics and auditLogs.
 
 middleware/
 
@@ -82,7 +78,7 @@ protect (JWT auth), authorize (role checks), rate limiters, and global error han
 
 models/
 
-Data models for users, organizations, resources, bookings, approvals, access groups, notifications, audit logs, blackout dates, recurring bookings, and calendar integrations
+Data models for users, organizations, resources, bookings, approvals, access groups, notifications, audit logs, blackout dates, and recurring bookings
 
 routes/
 
