@@ -78,7 +78,6 @@ export const updateProfile = async (
     const {
       name,
       phone,
-      department,
       photoUrl,
     } = req.body;
 
@@ -90,9 +89,6 @@ export const updateProfile = async (
       user.phone = phone;
     }
 
-    if (department !== undefined) {
-      user.department = department;
-    }
 
     if (photoUrl !== undefined) {
       user.photoUrl = photoUrl;

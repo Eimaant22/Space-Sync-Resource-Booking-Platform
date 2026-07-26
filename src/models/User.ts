@@ -64,11 +64,6 @@ const UserSchema = new Schema<IUser>(
       default: null,
     },
 
-    department: {
-      type: String,
-      trim: true,
-    },
-
     photoUrl: {
       type: String,
     },

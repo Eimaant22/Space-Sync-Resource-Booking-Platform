@@ -13,213 +13,478 @@ Unless noted otherwise, all request/response bodies are `application/json`, and 
 
 ---
 
-## 1. Auth
+# Module 1 (Part 1) – Signup Request Management
 
-### 1.1 Sign Up
+## Module Overview
 
-Creates an unverified user account and sends a 6-digit OTP to the provided email. The account cannot be used until the OTP is verified via [1.2 Verify OTP](#12-verify-otp).
+The **Signup Request Management Module** implements a **Super Admin Approval Workflow** for new user registrations.
 
-**Endpoint:** `POST /api/auth/signup`  
-**Auth required:** No
+Instead of creating a user account immediately after registration, the system stores every registration as a **Signup Request**. The request remains in **Pending** status until it is reviewed by the **Super Admin**.
 
-**Body Parameters**
+The Super Admin can:
+
+- View all signup requests
+- Filter requests by status
+- View complete request details
+- Approve signup requests
+- Reject signup requests
+- View processed request history
+
+### Approval Workflow
+
+When a request is **approved**:
+
+- A new user account is automatically created.
+- The signup request status changes to **Approved**.
+- The approving administrator is recorded.
+- The approval timestamp is saved.
+- An approval email is sent to the applicant.
+- An audit log is created.
+
+When a request is **rejected**:
+
+- The signup request status changes to **Rejected**.
+- The reviewing administrator is recorded.
+- The rejection timestamp is saved.
+- A rejection email is sent.
+- An audit log is created.
+
+---
+
+# Models Used
+
+| Model | Purpose |
+|--------|---------|
+| SignupRequest | Stores user registration requests awaiting approval |
+| User | Creates the actual user account after approval |
+| AuditLog | Records approval and rejection activities |
+
+---
+
+# Signup Request Schema
+
+## Collection
+
+```text
+signup_requests
+```
+
+## Fields
 
 | Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `username` | string | Yes | Unique handle — 3–20 characters, letters, numbers, and underscores only |
-| `name` | string | Yes | User's full/display name |
-| `email` | string | Yes | Unique email address |
-| `password` | string | Yes | Minimum 8 characters |
-| `role` | string | No | User role. Allowed values: `super_admin`, `space_admin`, `member`, `guest`. Defaults to `member` if omitted. |
+|--------|------|----------|-------------|
+| username | String | ✅ Yes | Unique username |
+| name | String | ✅ Yes | Full name |
+| email | String | ✅ Yes | User email |
+| password | String (Hashed) | ✅ Yes | Encrypted password |
+| role | Enum | ✅ Yes | member / guest / space_admin |
+| phone | String | ❌ No | Contact number |
+| photoUrl | String | ❌ No | Profile image URL |
+| status | Enum | ✅ Yes | pending / approved / rejected |
+| approvedBy | ObjectId(User) | ❌ No | Super Admin who processed the request |
+| approvedAt | Date | ❌ No | Approval or rejection timestamp |
+| createdAt | Date | Auto | Request creation time |
+| updatedAt | Date | Auto | Last update time |
 
-**Request Example**
+---
+
+# Controller: submitSignupRequest
+
+## Purpose
+
+Allows new users to submit a registration request. No user account is created immediately. Instead, the request is stored in **Pending** status until reviewed by the Super Admin.
+
+---
+
+## API Information
+
+| Property | Value |
+|----------|-------|
+| Controller | submitSignupRequest |
+| Method | POST |
+| Endpoint | `/api/signup-requests` |
+| Authentication Required | No |
+| Authorization Middleware | No |
+| Allowed Roles | Public |
+
+---
+
+## Request Fields
+
+| Field | Type | Required | Description |
+|--------|------|----------|-------------|
+| username | String | ✅ Yes | Unique username |
+| name | String | ✅ Yes | Full name |
+| email | String | ✅ Yes | Email address |
+| password | String | ✅ Yes | Account password |
+| role | Enum | ✅ Yes | member / guest / space_admin |
+| phone | String | ❌ No | Contact number |
+| photoUrl | String | ❌ No | Profile image URL |
+
+---
+
+## Example Request
+
+```http
+POST /api/signup-requests
+```
 
 ```json
 {
-  "username": "ayesha_k",
-  "name": "Ayesha Khan",
-  "email": "ayesha@example.com",
-  "password": "SecurePass123",
-  "role": "member"
+  "username": "john",
+  "name": "John Doe",
+  "email": "john@gmail.com",
+  "password": "password123",
+  "role": "member",
+  "phone": "03001234567",
+  "photoUrl": "https://example.com/profile.jpg"
 }
 ```
 
-**Success Response — `201 Created`**
+---
+
+## Success Response (201)
 
 ```json
 {
   "success": true,
-  "data": {
-    "message": "OTP sent to email. Please verify to complete signup."
-  }
+  "message": "Signup request submitted successfully. Please wait for approval from the Super Admin."
 }
 ```
 
-**Fail Response — `409 Conflict`** (email already registered)
-
-```json
-{
-  "success": false,
-  "error": {
-    "code": "EMAIL_IN_USE",
-    "message": "An account with this email already exists."
-  }
-}
-```
-
-**Fail Response — `409 Conflict`** (username already taken)
-
-```json
-{
-  "success": false,
-  "error": {
-    "code": "USERNAME_TAKEN",
-    "message": "This username is already taken."
-  }
-}
-```
-
-**Fail Response — `422 Unprocessable Entity`** (validation error)
-
-```json
-{
-  "success": false,
-  "error": {
-    "code": "VALIDATION_ERROR",
-    "message": "username must be 3–20 characters and contain only letters, numbers, or underscores."
-  }
-}
-```
-
-**Fail Response — `422 Unprocessable Entity`** (invalid role)
-
-```json
-{
-  "success": false,
-  "error": {
-    "code": "INVALID_ROLE",
-    "message": "Invalid role."
-  }
-}
-```
-
-> **Notes**
->
-> - If a user signs up using an email that already exists but has **not been verified**, the existing unverified account is updated with the new information, including the provided role, a new password, and a fresh OTP.
-> - If the `role` field is not provided, it automatically defaults to **`member`**.
-> - Allowed roles are: **`super_admin`**, **`space_admin`**, **`member`**, and **`guest`**.
 ---
 
-### 1.2 Verify OTP
+## Error Responses
 
-Verifies the OTP sent during signup. On success the account is marked as verified and a JWT is returned — the user is immediately logged in.
-
-**Endpoint:** `POST /api/auth/verify-otp`
-**Auth required:** No
-
-**Body Parameters**
-
-| Field   | Type   | Required | Description                              |
-| ------- | ------ | -------- | ---------------------------------------- |
-| `email` | string | Yes      | The email used during signup             |
-| `otp`   | string | Yes      | 6-digit code from the verification email |
-
-**Request Example**
+### 422 Validation Error
 
 ```json
 {
-  "email": "ayesha@example.com",
-  "otp": "482910"
+  "success": false,
+  "message": "username, name, email, role and password are required."
 }
 ```
 
-**Success Response — `200 OK`**
+### 422 Invalid Username
+
+```json
+{
+  "success": false,
+  "message": "Invalid username."
+}
+```
+
+### 422 Invalid Role
+
+```json
+{
+  "success": false,
+  "message": "Invalid role."
+}
+```
+
+### 409 User Already Exists
+
+```json
+{
+  "success": false,
+  "message": "User already exists."
+}
+```
+
+### 409 Pending Request Exists
+
+```json
+{
+  "success": false,
+  "message": "A signup request is already pending."
+}
+```
+
+---
+
+## Frontend Usage
+
+This endpoint is used by the Registration page. After successful submission, redirect the user to a **"Request Submitted Successfully"** screen informing them that their request is awaiting Super Admin approval.
+
+Do **not** redirect the user to the Login page.
+
+---
+
+## Backend Review
+
+- ✅ Prevents duplicate usernames and email addresses.
+- ✅ Prevents multiple pending requests from the same user.
+- ✅ Password is securely hashed before storing.
+- ✅ No user account is created until approval.
+
+---
+
+# Controller: getSignupRequests
+
+## Purpose
+
+Returns all signup requests submitted by users. Administrators can optionally filter requests by their approval status.
+
+---
+
+## API Information
+
+| Property | Value |
+|----------|-------|
+| Controller | getSignupRequests |
+| Method | GET |
+| Endpoint | `/api/signup-requests` |
+| Authentication Required | Yes |
+| Authorization Middleware | Yes |
+| Allowed Roles | Super Admin |
+
+---
+
+## Query Parameters
+
+| Parameter | Required | Allowed Values |
+|-----------|----------|----------------|
+| status | ❌ No | pending, approved, rejected |
+
+---
+
+## Example Request
+
+```http
+GET /api/signup-requests?status=pending
+Authorization: Bearer <SUPER_ADMIN_TOKEN>
+```
+
+---
+
+## Success Response (200)
 
 ```json
 {
   "success": true,
-  "data": {
-    "user": {
-      "_id": "65f1c2e4a1b2c3d4e5f6a7b8",
-      "username": "ayesha_k",
-      "name": "Ayesha Khan",
-      "email": "ayesha@example.com",
-      "createdAt": "2026-07-12T10:00:00.000Z"
-    },
-    "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
-  }
+  "requests": [
+    {
+      "_id": "...",
+      "username": "john",
+      "name": "John Doe",
+      "email": "john@gmail.com",
+      "role": "member",
+      "phone": "03001234567",
+      "status": "pending",
+      "createdAt": "...",
+      "updatedAt": "..."
+    }
+  ]
 }
 ```
-
-**Fail Response — `400 Bad Request`**
-
-```json
-{
-  "success": false,
-  "error": {
-    "code": "INVALID_OTP",
-    "message": "Invalid or expired OTP."
-  }
-}
-```
-
-**Fail Response — `404 Not Found`**
-
-```json
-{
-  "success": false,
-  "error": {
-    "code": "USER_NOT_FOUND",
-    "message": "No account found for this email."
-  }
-}
-```
-
-> **Note:** OTPs expire after **10 minutes** and are single-use — deleted from Redis immediately after successful verification.
 
 ---
 
-### 1.3 Log In
+## Error Response
 
-Authenticates a user with either their email or username plus password, and returns a JWT.
-
-**Endpoint:** `POST /api/auth/login`
-**Auth required:** No
-
-**Body Parameters**
-
-| Field        | Type   | Required | Description                      |
-| ------------ | ------ | -------- | -------------------------------- |
-| `identifier` | string | Yes      | The user's email **or** username |
-| `password`   | string | Yes      | Account password                 |
-
-**Request Example**
+### 422 Invalid Status
 
 ```json
 {
-  "identifier": "ayesha_k",
+  "success": false,
+  "message": "Invalid status filter."
+}
+```
+
+---
+
+## Frontend Usage
+
+This API powers:
+
+- Pending Requests page
+- Approved Requests page
+- Rejected Requests page
+
+The frontend only needs to change the `status` query parameter to retrieve the required list.
+
+---
+
+## Backend Review
+
+- ✅ Supports filtering by request status.
+- ✅ Returns requests sorted by latest submissions.
+- ✅ Accessible only to Super Admin.
+
+---
+
+# Controller: getSignupRequestById
+
+## Purpose
+
+Returns complete details of a single signup request.
+
+---
+
+## API Information
+
+| Property | Value |
+|----------|-------|
+| Controller | getSignupRequestById |
+| Method | GET |
+| Endpoint | `/api/signup-requests/:id` |
+| Authentication Required | Yes |
+| Authorization Middleware | Yes |
+| Allowed Roles | Super Admin |
+
+---
+
+## URL Parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| id | ObjectId | ✅ Yes | Signup Request ID |
+
+---
+
+## Example Request
+
+```http
+GET /api/signup-requests/685abc1234567890abcdef11
+Authorization: Bearer <SUPER_ADMIN_TOKEN>
+```
+
+---
+
+## Success Response (200)
+
+```json
+{
+  "success": true,
+  "signupRequest": {
+    "_id": "...",
+    "username": "john",
+    "name": "John Doe",
+    "email": "john@gmail.com",
+    "role": "member",
+    "phone": "03001234567",
+    "status": "approved",
+    "approvedAt": "...",
+    "approvedBy": {
+      "_id": "...",
+      "name": "Super Admin",
+      "email": "admin@gmail.com",
+      "role": "super_admin"
+    }
+  }
+}
+```
+
+---
+
+## Error Responses
+
+### 400 Bad Request
+
+```json
+{
+  "success": false,
+  "message": "Invalid signup request id."
+}
+```
+
+### 404 Not Found
+
+```json
+{
+  "success": false,
+  "message": "Signup request not found."
+}
+```
+
+---
+
+## Frontend Usage
+
+Used to display complete signup request information on the **Request Details** page before approval or rejection.
+
+---
+
+## Backend Review
+
+- ✅ Returns complete applicant information.
+- ✅ Includes reviewer information if already processed.
+- ✅ Accessible only by Super Admin.
+---
+
+# Module 1 part 2 – Authentication Module
+
+The Authentication Module is responsible for authenticating users and managing password recovery. It allows users to log in using either their email address or username, securely log out, and reset forgotten passwords using an OTP-based verification process.
+
+---
+
+# 1.1 Log In
+
+## Purpose
+
+Authenticates a user using either their email or username together with their password. On successful authentication, a JWT access token is returned. Only active accounts are allowed to log in.
+
+## API Details
+
+| Method | Endpoint |
+|--------|----------|
+| POST | `/api/auth/login` |
+
+### Authentication
+
+**Not Required**
+
+---
+
+## Request Body
+
+| Field | Type | Required | Description |
+|------|------|----------|-------------|
+| identifier | String | Yes | User's email address or username |
+| password | String | Yes | User account password |
+
+---
+
+## Example Request
+
+```http
+POST /api/auth/login
+```
+
+```json
+{
+  "identifier": "john_doe",
   "password": "SecurePass123"
 }
 ```
 
-**Success Response — `200 OK`**
+---
+
+## Success Response (200)
 
 ```json
 {
   "success": true,
   "data": {
     "user": {
-      "_id": "65f1c2e4a1b2c3d4e5f6a7b8",
-      "username": "ayesha_k",
-      "name": "Ayesha Khan",
-      "email": "ayesha@example.com"
+      "_id": "6872e10dc24d59e9a5bb2d10",
+      "username": "john_doe",
+      "name": "John Doe",
+      "email": "john@example.com",
+      "role": "member",
+      "organizationId": "6872cfe4f18e44b2fbb5e9d1"
     },
     "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
   }
 }
 ```
 
-**Fail Response — `401 Unauthorized`**
+---
+
+## Error Responses
+
+### 401 – Invalid Credentials
 
 ```json
 {
@@ -231,30 +496,67 @@ Authenticates a user with either their email or username plus password, and retu
 }
 ```
 
-**Fail Response — `403 Forbidden`** (account not yet verified)
+### 403 – Account Inactive
 
 ```json
 {
   "success": false,
   "error": {
-    "code": "EMAIL_NOT_VERIFIED",
-    "message": "Please verify your email before logging in."
+    "code": "ACCOUNT_INACTIVE",
+    "message": "Your account is inactive."
   }
 }
 ```
 
-> **Note:** The `identifier` field accepts both email addresses and usernames. The server detects which was sent by checking for the presence of `@`.
+### 422 – Validation Error
+
+```json
+{
+  "success": false,
+  "error": {
+    "code": "VALIDATION_ERROR",
+    "message": "identifier (email or username) and password are required."
+  }
+}
+```
 
 ---
 
-### 1.4 Log Out
+## Notes
 
-Invalidates the current JWT by writing it to a Redis blacklist with a TTL equal to the token's remaining lifetime. Any subsequent request using this token will be rejected with `401`.
+- The **identifier** field accepts either an email address or a username.
+- Login is only allowed for active accounts (`isActive = true`).
+- Passwords are verified using **bcrypt** before issuing a JWT access token.
 
-**Endpoint:** `POST /api/auth/logout`
-**Auth required:** Yes
+---
 
-**Success Response — `200 OK`**
+# 1.2 Log Out
+
+## Purpose
+
+Logs the current user out by blacklisting the JWT token in Redis until it naturally expires.
+
+## API Details
+
+| Method | Endpoint |
+|--------|----------|
+| POST | `/api/auth/logout` |
+
+### Authentication
+
+**Required**
+
+---
+
+## Headers
+
+```http
+Authorization: Bearer <jwt_token>
+```
+
+---
+
+## Success Response (200)
 
 ```json
 {
@@ -265,7 +567,11 @@ Invalidates the current JWT by writing it to a Redis blacklist with a TTL equal 
 }
 ```
 
-**Fail Response — `401 Unauthorized`**
+---
+
+## Error Responses
+
+### 401 – Unauthorized
 
 ```json
 {
@@ -279,28 +585,54 @@ Invalidates the current JWT by writing it to a Redis blacklist with a TTL equal 
 
 ---
 
-### 1.5 Forgot Password
+## Notes
 
-Sends a 6-digit OTP to the provided email if a verified account exists. The response is always identical whether or not the email is found, to prevent email enumeration.
+- The JWT token is stored in a Redis blacklist.
+- Any future request using the same token will be rejected until the token expires.
 
-**Endpoint:** `POST /api/auth/forgot-password`
-**Auth required:** No
+---
 
-**Body Parameters**
+# 1.3 Forgot Password
 
-| Field   | Type   | Required | Description                  |
-| ------- | ------ | -------- | ---------------------------- |
-| `email` | string | Yes      | Email address of the account |
+## Purpose
 
-**Request Example**
+Sends a password reset OTP to the user's email if a verified account exists. For security reasons, the response is identical whether or not the email exists.
+
+## API Details
+
+| Method | Endpoint |
+|--------|----------|
+| POST | `/api/auth/forgot-password` |
+
+### Authentication
+
+**Not Required**
+
+---
+
+## Request Body
+
+| Field | Type | Required | Description |
+|------|------|----------|-------------|
+| email | String | Yes | Registered email address |
+
+---
+
+## Example Request
+
+```http
+POST /api/auth/forgot-password
+```
 
 ```json
 {
-  "email": "ayesha@example.com"
+  "email": "john@example.com"
 }
 ```
 
-**Success Response — `200 OK`**
+---
+
+## Success Response (200)
 
 ```json
 {
@@ -311,7 +643,11 @@ Sends a 6-digit OTP to the provided email if a verified account exists. The resp
 }
 ```
 
-**Fail Response — `422 Unprocessable Entity`**
+---
+
+## Error Responses
+
+### 422 – Validation Error
 
 ```json
 {
@@ -325,42 +661,72 @@ Sends a 6-digit OTP to the provided email if a verified account exists. The resp
 
 ---
 
-### 1.6 Verify Reset OTP
+## Notes
 
-Verifies the password-reset OTP. On success, returns a short-lived `resetToken` that must be passed to [1.7 Reset Password](#17-reset-password).
+- OTP is sent only if the account exists and is verified.
+- The same response is returned even if the email does not exist to prevent email enumeration attacks.
 
-**Endpoint:** `POST /api/auth/verify-reset-otp`
-**Auth required:** No
+---
 
-**Body Parameters**
+# 1.4 Verify Reset OTP
 
-| Field   | Type   | Required | Description                      |
-| ------- | ------ | -------- | -------------------------------- |
-| `email` | string | Yes      | Email address of the account     |
-| `otp`   | string | Yes      | 6-digit OTP from the reset email |
+## Purpose
 
-**Request Example**
+Verifies the OTP received through email and returns a temporary reset token required for resetting the password.
+
+## API Details
+
+| Method | Endpoint |
+|--------|----------|
+| POST | `/api/auth/verify-reset-otp` |
+
+### Authentication
+
+**Not Required**
+
+---
+
+## Request Body
+
+| Field | Type | Required | Description |
+|------|------|----------|-------------|
+| email | String | Yes | Registered email address |
+| otp | String | Yes | 6-digit password reset OTP |
+
+---
+
+## Example Request
+
+```http
+POST /api/auth/verify-reset-otp
+```
 
 ```json
 {
-  "email": "ayesha@example.com",
-  "otp": "739201"
+  "email": "john@example.com",
+  "otp": "824163"
 }
 ```
 
-**Success Response — `200 OK`**
+---
+
+## Success Response (200)
 
 ```json
 {
   "success": true,
   "data": {
     "message": "OTP verified. Use the resetToken to set a new password.",
-    "resetToken": "a3f9c2e1d4b7a3f9c2e1d4b7..."
+    "resetToken": "3f7d15e3b4c7a98f41b23e1d5a67..."
   }
 }
 ```
 
-**Fail Response — `400 Bad Request`**
+---
+
+## Error Responses
+
+### 400 – Invalid OTP
 
 ```json
 {
@@ -372,36 +738,72 @@ Verifies the password-reset OTP. On success, returns a short-lived `resetToken` 
 }
 ```
 
-> **Note:** The `resetToken` expires in **15 minutes** and is single-use. Keep it in memory only — do not persist it.
-
----
-
-### 1.7 Reset Password
-
-Sets a new password using the `resetToken` obtained from [1.6 Verify Reset OTP](#16-verify-reset-otp). The reset token is consumed and cannot be reused.
-
-**Endpoint:** `POST /api/auth/reset-password`
-**Auth required:** No
-
-**Body Parameters**
-
-| Field         | Type   | Required | Description                           |
-| ------------- | ------ | -------- | ------------------------------------- |
-| `email`       | string | Yes      | Email address of the account          |
-| `resetToken`  | string | Yes      | Token returned by `/verify-reset-otp` |
-| `newPassword` | string | Yes      | New password, minimum 8 characters    |
-
-**Request Example**
+### 422 – Validation Error
 
 ```json
 {
-  "email": "ayesha@example.com",
-  "resetToken": "a3f9c2e1d4b7a3f9c2e1d4b7...",
-  "newPassword": "NewSecurePass456"
+  "success": false,
+  "error": {
+    "code": "VALIDATION_ERROR",
+    "message": "email and otp are required."
+  }
 }
 ```
 
-**Success Response — `200 OK`**
+---
+
+## Notes
+
+- The returned **resetToken** is temporary and expires automatically.
+- It must be supplied when calling the **Reset Password** endpoint.
+
+---
+
+# 1.5 Reset Password
+
+## Purpose
+
+Allows a user to set a new password using the reset token obtained from the **Verify Reset OTP** endpoint.
+
+## API Details
+
+| Method | Endpoint |
+|--------|----------|
+| POST | `/api/auth/reset-password` |
+
+### Authentication
+
+**Not Required**
+
+---
+
+## Request Body
+
+| Field | Type | Required | Description |
+|------|------|----------|-------------|
+| email | String | Yes | Registered email |
+| resetToken | String | Yes | Token returned by Verify Reset OTP |
+| newPassword | String | Yes | Minimum 8 characters |
+
+---
+
+## Example Request
+
+```http
+POST /api/auth/reset-password
+```
+
+```json
+{
+  "email": "john@example.com",
+  "resetToken": "3f7d15e3b4c7a98f41b23e1d5a67...",
+  "newPassword": "NewSecurePass123"
+}
+```
+
+---
+
+## Success Response (200)
 
 ```json
 {
@@ -412,7 +814,11 @@ Sets a new password using the `resetToken` obtained from [1.6 Verify Reset OTP](
 }
 ```
 
-**Fail Response — `400 Bad Request`**
+---
+
+## Error Responses
+
+### 400 – Invalid Reset Token
 
 ```json
 {
@@ -424,7 +830,7 @@ Sets a new password using the `resetToken` obtained from [1.6 Verify Reset OTP](
 }
 ```
 
-**Fail Response — `404 Not Found`**
+### 404 – User Not Found
 
 ```json
 {
@@ -436,7 +842,19 @@ Sets a new password using the `resetToken` obtained from [1.6 Verify Reset OTP](
 }
 ```
 
-**Fail Response — `422 Unprocessable Entity`**
+### 422 – Missing Required Fields
+
+```json
+{
+  "success": false,
+  "error": {
+    "code": "VALIDATION_ERROR",
+    "message": "email, resetToken, and newPassword are required."
+  }
+}
+```
+
+### 422 – Password Too Short
 
 ```json
 {
@@ -447,6 +865,14 @@ Sets a new password using the `resetToken` obtained from [1.6 Verify Reset OTP](
   }
 }
 ```
+
+---
+
+## Notes
+
+- Passwords are securely hashed before being stored.
+- The reset token can only be used once.
+- After successfully resetting the password, the user must log in again using the new password.
 
 
 
@@ -508,7 +934,6 @@ Authorization: Bearer <JWT_TOKEN>
             "email": "superadmin@spacesync.com",
             "role": "super_admin",
             "organizationId": null,
-            "department": "Administration",
             "photoUrl": "https://i.pravatar.cc/300?img=1",
             "phone": "+923001111111",
             "isVerified": true,
@@ -539,7 +964,6 @@ Allows the logged-in user to update their personal information such as name, pho
 |-------|------|---------------------|-------------|
 | `name` | String | No | User's full name. |
 | `phone` | String | No | User's contact number. |
-| `department` | String | No | User's department or designation. |
 | `photoUrl` | String | No | URL of the user's profile picture. |
 
 > **Note:** All fields are optional during profile update. Only the fields provided in the request body will be updated. Fields such as `username`, `email`, `role`, `organizationId`, `isVerified`, `isActive`, and `password` cannot be updated through this endpoint.
@@ -570,7 +994,6 @@ Allows the logged-in user to update their personal information such as name, pho
 {
   "name": "John Doe",
   "phone": "+923001234567",
-  "department": "Computer Science",
   "photoUrl": "https://example.com/profile.jpg"
 }
 ```
@@ -596,7 +1019,6 @@ Allows the logged-in user to update their personal information such as name, pho
             "email": "superadmin@spacesync.com",
             "role": "super_admin",
             "organizationId": null,
-            "department": "Computer Science",
             "photoUrl": "https://example.com/profile.jpg",
             "phone": "+923001234567",
             "isVerified": true,
@@ -671,7 +1093,6 @@ GET /api/users?search=john&role=member&isActive=true
                 "email": "hamza.sheikh@example.com",
                 "role": "member",
                 "organizationId": null,
-                "department": "Civil Engineering",
                 "photoUrl": "https://i.pravatar.cc/300?img=9",
                 "phone": "+923001111119",
                 "isVerified": true,
@@ -822,7 +1243,6 @@ Example:
         "name": "Ahmed Khan",
         "email": "ahmed@example.com",
         "role": "member",
-        "department": "Software Engineering",
         "isVerified": true,
         "isActive": true,
         "organizationId": {
@@ -964,7 +1384,6 @@ Allows the Super Admin to change the role of a user within the organization.
             "email": "maryam.asif@example.com",
             "role": "space_admin",
             "organizationId": null,
-            "department": "Software Engineering",
             "photoUrl": "https://i.pravatar.cc/300?img=8",
             "phone": "+923001111118",
             "isVerified": true,
@@ -5086,7 +5505,7 @@ Creates a new access group within the logged-in administrator's organization. Du
 | Endpoint | `/api/access-groups` |
 | Authentication Required | Yes |
 | Authorization Middleware | Yes |
-| Allowed Roles | Super Admin, Space Admin |
+| Allowed Roles | Space Admin |
 
 ---
 
@@ -5314,7 +5733,6 @@ Authorization: Bearer <token>
         "name": "Ali Khan",
         "email": "ali@example.com",
         "role": "member",
-        "department": "Computer Science"
       }
     ]
   }
@@ -5466,7 +5884,7 @@ Adds an existing user to an access group. Duplicate users are automatically prev
 | Endpoint | `/api/access-groups/:id/add-user` |
 | Authentication Required | Yes |
 | Authorization Middleware | Yes |
-| Allowed Roles | Super Admin, Space Admin |
+| Allowed Roles |Space Admin |
 
 ---
 
@@ -5559,7 +5977,7 @@ Removes a user from an existing access group.
 | Endpoint | `/api/access-groups/:id/remove-user` |
 | Authentication Required | Yes |
 | Authorization Middleware | Yes |
-| Allowed Roles | Super Admin, Space Admin |
+| Allowed Roles |Space Admin |
 
 ---
 
@@ -5644,7 +6062,7 @@ Deletes an access group. The group cannot be deleted if it is currently assigned
 | Endpoint | `/api/access-groups/:id` |
 | Authentication Required | Yes |
 | Authorization Middleware | Yes |
-| Allowed Roles | Super Admin, Space Admin |
+| Allowed Roles |Space Admin |
 
 ---
 

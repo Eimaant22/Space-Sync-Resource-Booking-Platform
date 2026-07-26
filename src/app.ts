@@ -2,6 +2,7 @@ import express from 'express';
 import cors from 'cors';
 
 // Routes
+import signupRequestRoutes from './routes/signupRequest.routes'
 import authRoutes from './routes/auth.routes';
 import userRoutes from './routes/user.routes';
 import organizationRoutes from './routes/organization.routes';
@@ -29,6 +30,7 @@ app.use(express.json());
 app.use('/api', globalLimiter);
 
 // Routes
+app.use('/api/signup-requests', signupRequestRoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/organizations', organizationRoutes);
@@ -39,6 +41,8 @@ app.use('/api/approvals', approvalRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/analytics', analyticsRoutes);
 app.use('/api/audit-logs', auditLogRoutes);
+
+
 
 
 // Health Check

@@ -36,35 +36,35 @@ router.get(
 router.post(
   '/',
   protect,
-  authorize('super_admin','space_admin'),
+  authorize('space_admin'),
   createAccessGroup
 );
 
 router.patch(
   '/:id',
   protect,
-  authorize('super_admin','space_admin'),
+  authorize('space_admin'),
   updateAccessGroup
 );
 
 router.patch(
   '/:id/add-user',
   protect,
-  authorize('super_admin','space_admin'),
+  authorize('space_admin'),
   addUserToGroup
 );
 
 router.patch(
   '/:id/remove-user',
   protect,
-  authorize('super_admin','space_admin'),
+  authorize('space_admin'),
   removeUserFromGroup
 );
 
 router.delete(
   '/:id',
   protect,
-  authorize('super_admin','space_admin'),
+  authorize('space_admin'),
   deleteAccessGroup
 );
 

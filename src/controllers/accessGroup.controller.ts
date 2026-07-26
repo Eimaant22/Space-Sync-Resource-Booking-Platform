@@ -2,7 +2,6 @@ import { Response, NextFunction } from 'express';
 import mongoose from 'mongoose';
 
 import AccessGroup from '../models/AccessGroup';
-import Organization from '../models/Organization';
 import User from '../models/User';
 
 import { AuthRequest } from '../middleware/auth';
@@ -24,25 +23,42 @@ export const createAccessGroup = async (
     const user = await User.findById(userId);
 
     if (!user) {
-      throw new AppError('User not found.',404,'USER_NOT_FOUND');
+      throw new AppError(
+        'User not found.',
+        404,
+        'USER_NOT_FOUND'
+      );
     }
 
     if (!user.organizationId) {
-      throw new AppError('Organization not assigned.',400,'NO_ORGANIZATION');
+      throw new AppError(
+        'Organization not assigned.',
+        400,
+        'NO_ORGANIZATION'
+      );
     }
 
     const { name, description } = req.body;
 
     if (!name) {
-      throw new AppError('Name is required.',422,'VALIDATION_ERROR');
+      throw new AppError(
+        'Name is required.',
+        422,
+        'VALIDATION_ERROR'
+      );
     }
 
     const exists = await AccessGroup.findOne({
-      organizationId:user.organizationId,
-      name
+      organizationId: user.organizationId,
+      name: {
+        $regex: new RegExp(
+          `^${name.trim()}$`,
+          'i'
+        ),
+      },
     });
 
-    if(exists){
+    if (exists) {
       throw new AppError(
         'Access group already exists.',
         409,
@@ -51,17 +67,22 @@ export const createAccessGroup = async (
     }
 
     const accessGroup = await AccessGroup.create({
-      name,
+      name: name.trim(),
       description,
-      organizationId:user.organizationId
+      organizationId: user.organizationId,
     });
 
-    sendSuccess(res,{
-      message:'Access group created successfully.',
-      accessGroup
-    },201);
+    sendSuccess(
+      res,
+      {
+        message:
+          'Access group created successfully.',
+        accessGroup,
+      },
+      201
+    );
 
-  } catch(err){
+  } catch (err) {
     next(err);
   }
 };
@@ -69,28 +90,43 @@ export const createAccessGroup = async (
 /**
  * GET /api/access-groups
  */
-export const getAccessGroups = async(
-  req:AuthRequest,
-  res:Response,
-  next:NextFunction
-):Promise<void>=>{
-  try{
+export const getAccessGroups = async (
+  req: AuthRequest,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
 
-    const user=await User.findById(req.userId!.toString());
+    const user = await User.findById(
+      req.userId!.toString()
+    );
 
-    if(!user){
-      throw new AppError('User not found.',404,'USER_NOT_FOUND');
+    if (!user) {
+      throw new AppError(
+        'User not found.',
+        404,
+        'USER_NOT_FOUND'
+      );
     }
 
-    const accessGroups=await AccessGroup.find({
-      organizationId:user.organizationId
-    })
-    .populate('users','name email role')
-    .sort({createdAt:-1});
+    const accessGroups =
+      await AccessGroup.find({
+        organizationId:
+          user.organizationId,
+      })
+        .populate(
+          'users',
+          'name email role'
+        )
+        .sort({
+          createdAt: -1,
+        });
 
-    sendSuccess(res,{accessGroups});
+    sendSuccess(res, {
+      accessGroups,
+    });
 
-  }catch(err){
+  } catch (err) {
     next(err);
   }
 };
@@ -98,186 +134,315 @@ export const getAccessGroups = async(
 /**
  * GET /api/access-groups/:id
  */
-export const getAccessGroupById=async(
-req:AuthRequest,
-res:Response,
-next:NextFunction
-):Promise<void>=>{
+export const getAccessGroupById = async (
+  req: AuthRequest,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
 
-try{
+  try {
 
-const id=req.params.id.toString();
+    const currentUser =
+      await User.findById(req.userId);
 
-if(!mongoose.Types.ObjectId.isValid(id)){
-throw new AppError(
-'Invalid access group id.',
-400,
-'INVALID_ID'
-);
-}
+    if (!currentUser) {
+      throw new AppError(
+        'User not found.',
+        404,
+        'USER_NOT_FOUND'
+      );
+    }
 
-const accessGroup=await AccessGroup.findById(id)
-.populate('users','name email role department');
+    const id =
+      req.params.id.toString();
 
-if(!accessGroup){
-throw new AppError(
-'Access group not found.',
-404,
-'ACCESS_GROUP_NOT_FOUND'
-);
-}
+    if (
+      !mongoose.Types.ObjectId.isValid(id)
+    ) {
+      throw new AppError(
+        'Invalid access group id.',
+        400,
+        'INVALID_ID'
+      );
+    }
 
-sendSuccess(res,{accessGroup});
+    const accessGroup =
+      await AccessGroup.findOne({
+        _id: id,
+        organizationId:
+          currentUser.organizationId,
+      }).populate(
+        'users',
+        'name email role department'
+      );
 
-}catch(err){
-next(err);
-}
+    if (!accessGroup) {
+      throw new AppError(
+        'Access group not found.',
+        404,
+        'ACCESS_GROUP_NOT_FOUND'
+      );
+    }
+
+    sendSuccess(res, {
+      accessGroup,
+    });
+
+  } catch (err) {
+    next(err);
+  }
 };
 
 /**
  * PATCH /api/access-groups/:id
  */
-export const updateAccessGroup=async(
-req:AuthRequest,
-res:Response,
-next:NextFunction
-):Promise<void>=>{
+export const updateAccessGroup = async (
+  req: AuthRequest,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
 
-try{
+  try {
 
-const id=req.params.id.toString();
+    const currentUser =
+      await User.findById(req.userId);
 
-if(!mongoose.Types.ObjectId.isValid(id)){
-throw new AppError(
-'Invalid access group id.',
-400,
-'INVALID_ID'
-);
-}
+    if (!currentUser) {
+      throw new AppError(
+        'User not found.',
+        404,
+        'USER_NOT_FOUND'
+      );
+    }
 
-const accessGroup=await AccessGroup.findById(id);
+    const id =
+      req.params.id.toString();
 
-if(!accessGroup){
-throw new AppError(
-'Access group not found.',
-404,
-'ACCESS_GROUP_NOT_FOUND'
-);
-}
+    if (
+      !mongoose.Types.ObjectId.isValid(id)
+    ) {
+      throw new AppError(
+        'Invalid access group id.',
+        400,
+        'INVALID_ID'
+      );
+    }
 
-const{name,description}=req.body;
+    const accessGroup =
+      await AccessGroup.findOne({
+        _id: id,
+        organizationId:
+          currentUser.organizationId,
+      });
 
-if(name!==undefined){
-accessGroup.name=name;
-}
+    if (!accessGroup) {
+      throw new AppError(
+        'Access group not found.',
+        404,
+        'ACCESS_GROUP_NOT_FOUND'
+      );
+    }
 
-if(description!==undefined){
-accessGroup.description=description;
-}
+    const {
+      name,
+      description,
+    } = req.body;
 
-await accessGroup.save();
+    if (name !== undefined) {
 
-sendSuccess(res,{
-message:'Access group updated successfully.',
-accessGroup
-});
+      const exists =
+        await AccessGroup.findOne({
+          _id: {
+            $ne: accessGroup._id,
+          },
+          organizationId:
+            currentUser.organizationId,
+          name: {
+            $regex:
+              new RegExp(
+                `^${name.trim()}$`,
+                'i'
+              ),
+          },
+        });
 
-}catch(err){
-next(err);
-}
+      if (exists) {
+        throw new AppError(
+          'Access group already exists.',
+          409,
+          'ACCESS_GROUP_EXISTS'
+        );
+      }
+
+      accessGroup.name =
+        name.trim();
+    }
+
+    if (
+      description !== undefined
+    ) {
+      accessGroup.description =
+        description;
+    }
+
+    await accessGroup.save();
+
+    sendSuccess(res, {
+      message:
+        'Access group updated successfully.',
+      accessGroup,
+    });
+
+  } catch (err) {
+    next(err);
+  }
 };
 
 /**
  * PATCH /api/access-groups/:id/add-user
  */
-export const addUserToGroup=async(
-req:AuthRequest,
-res:Response,
-next:NextFunction
-):Promise<void>=>{
+export const addUserToGroup = async (
+  req: AuthRequest,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
 
-try{
+    const currentUser = await User.findById(req.userId);
 
-const groupId=req.params.id.toString();
-const{userId}=req.body;
+    if (!currentUser) {
+      throw new AppError(
+        'User not found.',
+        404,
+        'USER_NOT_FOUND'
+      );
+    }
 
-const accessGroup=await AccessGroup.findById(groupId);
+    const groupId = req.params.id.toString();
+    const { userId } = req.body;
 
-if(!accessGroup){
-throw new AppError(
-'Access group not found.',
-404,
-'ACCESS_GROUP_NOT_FOUND'
-);
-}
+    const accessGroup = await AccessGroup.findOne({
+      _id: groupId,
+      organizationId: currentUser.organizationId,
+    });
 
-const user=await User.findById(userId);
+    if (!accessGroup) {
+      throw new AppError(
+        'Access group not found.',
+        404,
+        'ACCESS_GROUP_NOT_FOUND'
+      );
+    }
 
-if(!user){
-throw new AppError(
-'User not found.',
-404,
-'USER_NOT_FOUND'
-);
-}
+    const user = await User.findById(userId);
 
-const exists=accessGroup.users.some(
-id=>id.toString()===userId
-);
+    if (!user) {
+      throw new AppError(
+        'User not found.',
+        404,
+        'USER_NOT_FOUND'
+      );
+    }
 
-if(!exists){
-accessGroup.users.push(user._id);
-await accessGroup.save();
-}
+    if (
+      user.organizationId?.toString() !==
+      currentUser.organizationId?.toString()
+    ) {
+      throw new AppError(
+        'User belongs to another organization.',
+        400,
+        'INVALID_USER'
+      );
+    }
 
-sendSuccess(res,{
-message:'User added successfully.',
-accessGroup
-});
+    const exists = accessGroup.users.some(
+      id => id.toString() === userId
+    );
 
-}catch(err){
-next(err);
-}
+    if (exists) {
+      throw new AppError(
+        'User already exists in this access group.',
+        409,
+        'USER_ALREADY_IN_GROUP'
+      );
+    }
+
+    accessGroup.users.push(user._id);
+
+    await accessGroup.save();
+
+    sendSuccess(res, {
+      message: 'User added successfully.',
+      accessGroup,
+    });
+
+  } catch (err) {
+    next(err);
+  }
 };
 
 /**
  * PATCH /api/access-groups/:id/remove-user
  */
-export const removeUserFromGroup=async(
-req:AuthRequest,
-res:Response,
-next:NextFunction
-):Promise<void>=>{
+export const removeUserFromGroup = async (
+  req: AuthRequest,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
 
-try{
+    const currentUser = await User.findById(req.userId);
 
-const groupId=req.params.id.toString();
-const{userId}=req.body;
+    if (!currentUser) {
+      throw new AppError(
+        'User not found.',
+        404,
+        'USER_NOT_FOUND'
+      );
+    }
 
-const accessGroup=await AccessGroup.findById(groupId);
+    const groupId = req.params.id.toString();
+    const { userId } = req.body;
 
-if(!accessGroup){
-throw new AppError(
-'Access group not found.',
-404,
-'ACCESS_GROUP_NOT_FOUND'
-);
-}
+    const accessGroup = await AccessGroup.findOne({
+      _id: groupId,
+      organizationId: currentUser.organizationId,
+    });
 
-accessGroup.users=accessGroup.users.filter(
-id=>id.toString()!==userId
-);
+    if (!accessGroup) {
+      throw new AppError(
+        'Access group not found.',
+        404,
+        'ACCESS_GROUP_NOT_FOUND'
+      );
+    }
 
-await accessGroup.save();
+    const exists = accessGroup.users.some(
+      id => id.toString() === userId
+    );
 
-sendSuccess(res,{
-message:'User removed successfully.',
-accessGroup
-});
+    if (!exists) {
+      throw new AppError(
+        'User is not part of this access group.',
+        404,
+        'USER_NOT_IN_GROUP'
+      );
+    }
 
-}catch(err){
-next(err);
-}
+    accessGroup.users = accessGroup.users.filter(
+      id => id.toString() !== userId
+    );
+
+    await accessGroup.save();
+
+    sendSuccess(res, {
+      message: 'User removed successfully.',
+      accessGroup,
+    });
+
+  } catch (err) {
+    next(err);
+  }
 };
 
 /**
@@ -289,6 +454,17 @@ export const deleteAccessGroup = async (
   next: NextFunction
 ): Promise<void> => {
   try {
+
+    const currentUser = await User.findById(req.userId);
+
+    if (!currentUser) {
+      throw new AppError(
+        'User not found.',
+        404,
+        'USER_NOT_FOUND'
+      );
+    }
+
     const id = req.params.id.toString();
 
     if (!mongoose.Types.ObjectId.isValid(id)) {
@@ -299,7 +475,10 @@ export const deleteAccessGroup = async (
       );
     }
 
-    const accessGroup = await AccessGroup.findById(id);
+    const accessGroup = await AccessGroup.findOne({
+      _id: id,
+      organizationId: currentUser.organizationId,
+    });
 
     if (!accessGroup) {
       throw new AppError(
@@ -309,7 +488,6 @@ export const deleteAccessGroup = async (
       );
     }
 
-    // Prevent deletion if resources are using this group
     const linkedResources = await Resource.countDocuments({
       accessGroupId: accessGroup._id,
     });
@@ -327,6 +505,7 @@ export const deleteAccessGroup = async (
     sendSuccess(res, {
       message: 'Access group deleted successfully.',
     });
+
   } catch (err) {
     next(err);
   }
