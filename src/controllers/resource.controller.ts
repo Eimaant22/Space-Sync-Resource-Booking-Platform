@@ -171,11 +171,11 @@ export const createResource = async (
   }
 };
 
-/**
- * GET /api/resources
- * Logged-in Users
- */
-export const getResources = async (
+
+ // GET /api/resources/search
+ //Search resources based on user role
+ 
+export const searchAvailableResources = async (
   req: AuthRequest,
   res: Response,
   next: NextFunction
@@ -201,10 +201,43 @@ export const getResources = async (
     } = req.query;
 
     const filter: any = {
-      organizationId: user.organizationId,
       isActive: true,
     };
 
+    // Super Admin
+    if (user.role === 'super_admin') {
+      // No organization restriction
+    }
+
+    // Space Admin
+    else if (user.role === 'space_admin') {
+      filter.organizationId = user.organizationId;
+    }
+
+    // Member / Guest
+    else {
+      const groups = await AccessGroup.find({
+        organizationId: user.organizationId,
+        users: user._id,
+      }).select('_id');
+
+      if (groups.length === 0) {
+        throw new AppError(
+          'You are not assigned to any access group.',
+          403,
+          'ACCESS_GROUP_REQUIRED'
+        );
+      }
+
+      const groupIds = groups.map(group => group._id);
+
+      filter.organizationId = user.organizationId;
+      filter.accessGroupId = {
+        $in: groupIds,
+      };
+    }
+
+   
     if (search) {
       filter.name = {
         $regex: String(search),
@@ -212,16 +245,19 @@ export const getResources = async (
       };
     }
 
+   
     if (type) {
       filter.type = String(type).toLowerCase();
     }
 
+  
     if (building) {
       filter.building = {
         $regex: String(building),
         $options: 'i',
       };
     }
+
 
     if (requiresApproval !== undefined) {
       filter.requiresApproval =
@@ -230,6 +266,7 @@ export const getResources = async (
 
     const resources = await Resource.find(filter)
       .populate('createdBy', 'name email')
+      .populate('organizationId', 'name')
       .populate('accessGroupId', 'name')
       .sort({
         createdAt: -1,
@@ -706,36 +743,68 @@ export const getAvailableResources = async (
       );
     }
 
-    const groups = await AccessGroup.find({
-      users: user._id,
-    }).select('_id');
+    let resources;
 
-    const groupIds = groups.map(group => group._id);
+    
+    
+     
+    if (user.role === 'super_admin') {
+      resources = await Resource.find({
+        isActive: true,
+      })
+        .populate('createdBy', 'name email')
+        .populate('organizationId', 'name')
+        .populate('accessGroupId', 'name')
+        .sort({
+          createdAt: -1,
+        });
+    }
 
-    const resources = await Resource.find({
-      organizationId: user.organizationId,
-      isActive: true,
-      $or: [
-        {
-          accessGroupId: null,
+   
+    else if (user.role === 'space_admin') {
+      resources = await Resource.find({
+        organizationId: user.organizationId,
+        isActive: true,
+      })
+        .populate('createdBy', 'name email')
+        .populate('organizationId', 'name')
+        .populate('accessGroupId', 'name')
+        .sort({
+          createdAt: -1,
+        });
+    }
+
+   
+    else {
+      const groups = await AccessGroup.find({
+        organizationId: user.organizationId,
+        users: user._id,
+      }).select('_id');
+
+      if (groups.length === 0) {
+        throw new AppError(
+          'You are not assigned to any access group.',
+          403,
+          'ACCESS_GROUP_REQUIRED'
+        );
+      }
+
+      const groupIds = groups.map(group => group._id);
+
+      resources = await Resource.find({
+        organizationId: user.organizationId,
+        isActive: true,
+        accessGroupId: {
+          $in: groupIds,
         },
-        {
-          accessGroupId: {
-            $exists: false,
-          },
-        },
-        {
-          accessGroupId: {
-            $in: groupIds,
-          },
-        },
-      ],
-    })
-      .populate('createdBy', 'name email')
-      .populate('accessGroupId', 'name')
-      .sort({
-        createdAt: -1,
-      });
+      })
+        .populate('createdBy', 'name email')
+        .populate('organizationId', 'name')
+        .populate('accessGroupId', 'name')
+        .sort({
+          createdAt: -1,
+        });
+    }
 
     sendSuccess(res, {
       resources,

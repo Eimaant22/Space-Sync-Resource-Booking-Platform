@@ -2,8 +2,8 @@ import { Router } from 'express';
 
 import {
   createResource,
-  getResources,
-  getAvailableResources,   // <-- NEW
+  searchAvailableResources,
+  getAvailableResources,
   getResourceById,
   updateResource,
   updateResourceStatus,
@@ -15,47 +15,16 @@ import { authorize } from '../middleware/authorize';
 
 const router = Router();
 
-/**
- * Space Admin
- */
-router.post(
-  '/',
-  protect,
-  authorize('space_admin'),
-  createResource
-);
 
-router.patch(
-  '/:id',
-  protect,
-  authorize('space_admin'),
-  updateResource
-);
+//public routes 
 
-router.patch(
-  '/:id/status',
-  protect,
-  authorize('space_admin'),
-  updateResourceStatus
-);
 
-router.delete(
-  '/:id',
-  protect,
-  authorize('space_admin'),
-  deleteResource
-);
-
-/**
- * All authenticated users
- */
 router.get(
-  '/',
+  '/search',
   protect,
-  getResources
+  searchAvailableResources
 );
 
-// NEW API
 router.get(
   '/available',
   protect,
@@ -66,6 +35,38 @@ router.get(
   '/:id',
   protect,
   getResourceById
+);
+
+
+// space admin                                 
+
+
+router.post(
+  '/',
+  protect,
+  authorize('space_admin'),
+  createResource
+);
+
+router.patch(
+  '/:id/status',
+  protect,
+  authorize('space_admin'),
+  updateResourceStatus
+);
+
+router.patch(
+  '/:id',
+  protect,
+  authorize('space_admin'),
+  updateResource
+);
+
+router.delete(
+  '/:id',
+  protect,
+  authorize('space_admin'),
+  deleteResource
 );
 
 export default router;

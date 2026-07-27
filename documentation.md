@@ -2586,55 +2586,46 @@ Used by the **Space Admin** from the **Resource Management** page to create reso
 
 ---
 
-# Controller: getResources
+# Controller: searchAvailableResources
 
-## Purpose
+# Purpose
 
-Returns all active resources belonging to the logged-in user's organization with optional search and type filters.
+Searches resources based on the logged-in user's role and optional search filters.
 
-## Quick Reference
+**Endpoint:** `GET /api/resources/search`  
+**Auth required:** Yes
 
-| Item | Value |
-|------|-------|
-| Module | Resource |
-| Controller | `getResources` |
-| Method | GET |
-| Endpoint | `/api/resources` |
-| Authentication | Yes |
-| Authorization | Any Authenticated User |
-| Tested By | Space Admin / Member / Guest |
+## Authorization
 
-## Authentication & Authorization
+| Role | Access |
+|------|--------|
+| Super Admin | Can search all active resources across all organizations. |
+| Space Admin | Can search all active resources within their own organization. |
+| Member | Can search only active resources assigned to their access group(s). |
+| Guest | Can search only active resources assigned to their access group(s). |
 
-| Middleware | Required |
-|------------|----------|
-| protect | Yes |
-| authorize | No |
-
-### Allowed Roles
-
-- ✅ Super Admin (if authenticated)
-- ✅ Space Admin
-- ✅ Member
-- ✅ Guest
+---
 
 ## Query Parameters
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `search` | String | ❌ No | Search resources by name. |
-| `type` | String | ❌ No | Filter by resource type. |
+| search | string | No | Search resource by name (case-insensitive). |
+| type | string | No | Filter resources by type. |
+| building | string | No | Filter resources by building name. |
+| requiresApproval | boolean | No | Filter resources requiring approval. |
 
-## Example Request
+---
+
+## Request Example
 
 ```http
-GET /api/resources?search=room&type=room
-Authorization: Bearer <TOKEN>
+GET /api/resources/search?search=Lab&type=lab&building=Block A&requiresApproval=true
 ```
 
-## Example Response
+---
 
-### ✅ 200 OK
+## Success Response (200)
 
 ```json
 {
@@ -2642,20 +2633,19 @@ Authorization: Bearer <TOKEN>
   "data": {
     "resources": [
       {
-        "_id": "6876...",
-        "name": "Conference Room A",
-        "type": "room",
-        "capacity": 20,
+        "_id": "6871ab23c8...",
+        "name": "AI Lab",
+        "type": "lab",
         "building": "Block A",
-        "location": "First Floor",
+        "capacity": 40,
         "requiresApproval": true,
-        "createdBy": {
-          "name": "Ali",
-          "email": "ali@test.com"
+        "organizationId": {
+          "_id": "6865cd...",
+          "name": "COMSATS Islamabad"
         },
         "accessGroupId": {
-          "_id": "...",
-          "name": "Faculty"
+          "_id": "6869ef...",
+          "name": "Computer Science"
         }
       }
     ]
@@ -2663,38 +2653,38 @@ Authorization: Bearer <TOKEN>
 }
 ```
 
-### ❌ 404 User Not Found
+---
+
+## Error Responses
+
+### User Not Found (404)
 
 ```json
 {
   "success": false,
-  "error": {
-    "code": "USER_NOT_FOUND",
-    "message": "User not found."
-  }
+  "message": "User not found."
 }
 ```
 
-### ❌ 401 Unauthorized
+### User Not Assigned to Any Access Group (403)
 
 ```json
 {
   "success": false,
-  "error": {
-    "code": "UNAUTHENTICATED",
-    "message": "Authentication required."
-  }
+  "message": "You are not assigned to any access group."
 }
 ```
 
-## Frontend Usage (According to PRD)
+### No Matching Resources Found (200)
 
-This API powers the **Browse Resources** page. Members, Guests, and Space Admins use it to search, filter, and select resources before checking availability or creating a booking.
-
-## Models Used
-
-- Resource
-- User
+```json
+{
+  "success": true,
+  "data": {
+    "resources": []
+  }
+}
+```
 ---
 # Controller: getResourceById
 
@@ -3452,29 +3442,40 @@ Since the resource is not permanently removed, historical bookings, reports, and
 - Maintains a complete audit trail of resource deletion operations.
 ```
 
-### Controller: getAvailableResources
+# Controller getAvailableResources
 
-Returns all resources that the currently logged-in user is allowed to access and book.
 
-A resource is included in the response only if:
-
-- It belongs to the user's organization.
-- It is active.
-- It has no access group assigned (**Open to All**), or
-- The logged-in user is a member of the assigned access group.
-
-This endpoint is intended for the booking module so that users only see resources they are authorized to reserve.
+Returns all active resources available to the logged-in user according to their role.
 
 **Endpoint:** `GET /api/resources/available`  
 **Auth required:** Yes
 
-**Headers**
+## Authorization
 
-| Header | Required | Description |
-|--------|----------|-------------|
-| `Authorization` | Yes | Bearer JWT access token |
+| Role | Access |
+|------|--------|
+| Super Admin | Can view every active resource across all organizations. |
+| Space Admin | Can view every active resource within their own organization. |
+| Member | Can view only active resources assigned to their access group(s). |
+| Guest | Can view only active resources assigned to their access group(s). |
 
-**Success Response — `200 OK`**
+---
+
+## Request Parameters
+
+None.
+
+---
+
+## Request Example
+
+```http
+GET /api/resources/available
+```
+
+---
+
+## Success Response (200)
 
 ```json
 {
@@ -3482,60 +3483,58 @@ This endpoint is intended for the booking module so that users only see resource
   "data": {
     "resources": [
       {
-        "_id": "687b7bfa3e6b2c1c9c7b1111",
-        "name": "Conference Room A",
+        "_id": "6871ab23c8...",
+        "name": "Conference Room",
         "type": "room",
-        "building": "Block A",
-        "location": "First Floor",
+        "building": "Main Block",
         "capacity": 20,
-        "amenities": [
-          "Projector",
-          "Whiteboard"
-        ],
-        "photoUrl": "https://res.cloudinary.com/demo/image/upload/sample.jpg",
         "requiresApproval": false,
-        "bufferTime": 15,
-        "isActive": true,
+        "organizationId": {
+          "_id": "6865cd...",
+          "name": "COMSATS Islamabad"
+        },
         "accessGroupId": {
-          "_id": "687b7c203e6b2c1c9c7b2001",
-          "name": "Faculty Members"
+          "_id": "6869ef...",
+          "name": "Faculty"
         }
-      },
-      {
-        "_id": "687b7bfa3e6b2c1c9c7b1112",
-        "name": "Computer Lab",
-        "type": "lab",
-        "accessGroupId": null
       }
     ]
   }
 }
 ```
 
-**Fail Response — `401 Unauthorized`**
+---
+
+## Error Responses
+
+### User Not Found (404)
 
 ```json
 {
   "success": false,
-  "error": {
-    "code": "UNAUTHENTICATED",
-    "message": "Invalid or expired token."
-  }
+  "message": "User not found."
 }
 ```
 
-**Fail Response — `404 Not Found`**
+### User Not Assigned to Any Access Group (403)
 
 ```json
 {
   "success": false,
-  "error": {
-    "code": "USER_NOT_FOUND",
-    "message": "User not found."
-  }
+  "message": "You are not assigned to any access group."
 }
 ```
 
+### No Resources Available (200)
+
+```json
+{
+  "success": true,
+  "data": {
+    "resources": []
+  }
+}
+```
 > **Notes**
 >
 > - Only active resources are returned.
