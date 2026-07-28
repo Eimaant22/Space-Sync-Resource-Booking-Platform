@@ -81,9 +81,10 @@ const UserSchema = new Schema<IUser>(
       default: true,
     },
 
-    lastLogin: {
-      type: Date,
-    },
+   lastLogin: {
+    type: Date,
+    default: null
+},
   },
   {
     timestamps: true,

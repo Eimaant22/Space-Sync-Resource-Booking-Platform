@@ -1,4 +1,4 @@
-import { Request, Response, NextFunction } from 'express';
+import {Response, NextFunction } from 'express';
 import mongoose from 'mongoose';
 
 import Organization from '../models/Organization';
@@ -9,6 +9,7 @@ import AppError from '../utils/AppError';
 import { sendSuccess } from '../utils/response';
 import { AuthRequest } from '../middleware/auth';
 import Resource from '../models/Resource';
+import AccessGroup from '../models/AccessGroup';
 
 /**
  * POST /api/organizations
@@ -399,6 +400,95 @@ export const assignSpaceAdmin = async (
       message: 'Space Admin assigned successfully.',
       user,
     });
+  } catch (err) {
+    next(err);
+  }
+};
+
+
+/**
+ * PATCH /api/organizations/remove-user/:userId
+ * Space Admin
+ */
+export const removeUserFromOrganization = async (
+  req: AuthRequest,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+
+    const currentUser = await User.findById(req.userId);
+
+    if (!currentUser) {
+      throw new AppError(
+        'User not found.',
+        404,
+        'USER_NOT_FOUND'
+      );
+    }
+
+    if (!currentUser.organizationId) {
+      throw new AppError(
+        'Organization not assigned.',
+        400,
+        'NO_ORGANIZATION'
+      );
+    }
+
+    const userId = req.params.userId.toString();
+
+    if (!mongoose.Types.ObjectId.isValid(userId)) {
+      throw new AppError(
+        'Invalid user id.',
+        400,
+        'INVALID_ID'
+      );
+    }
+
+    const user = await User.findById(userId);
+
+    if (!user) {
+      throw new AppError(
+        'User not found.',
+        404,
+        'USER_NOT_FOUND'
+      );
+    }
+
+    if (
+      !user.organizationId ||
+      user.organizationId.toString() !==
+      currentUser.organizationId.toString()
+    ) {
+      throw new AppError(
+        'User does not belong to your organization.',
+        400,
+        'INVALID_USER'
+      );
+    }
+
+    // Remove user from every access group
+    await AccessGroup.updateMany(
+      {
+        organizationId: currentUser.organizationId,
+      },
+      {
+        $pull: {
+          users: user._id,
+        },
+      }
+    );
+
+    //set organizatiOn to null
+    user.organizationId = undefined;
+    await user.save();
+
+    sendSuccess(res, {
+      message:
+        'User removed from organization successfully.',
+      user,
+    });
+
   } catch (err) {
     next(err);
   }

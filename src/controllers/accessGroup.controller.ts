@@ -301,6 +301,9 @@ export const updateAccessGroup = async (
 /**
  * PATCH /api/access-groups/:id/add-user
  */
+/**
+ * PATCH /api/access-groups/:id/add-user
+ */
 export const addUserToGroup = async (
   req: AuthRequest,
   res: Response,
@@ -318,8 +321,24 @@ export const addUserToGroup = async (
       );
     }
 
+    if (!currentUser.organizationId) {
+      throw new AppError(
+        'Your account is not assigned to any organization.',
+        400,
+        'NO_ORGANIZATION'
+      );
+    }
+
     const groupId = req.params.id.toString();
     const { userId } = req.body;
+
+    if (!mongoose.Types.ObjectId.isValid(groupId)) {
+      throw new AppError(
+        'Invalid access group id.',
+        400,
+        'INVALID_ID'
+      );
+    }
 
     const accessGroup = await AccessGroup.findOne({
       _id: groupId,
@@ -344,9 +363,25 @@ export const addUserToGroup = async (
       );
     }
 
+    // --------------------------------------------------
+    // If the user has no organization assigned,
+    // automatically assign the Space Admin's organization.
+    // --------------------------------------------------
+    if (!user.organizationId) {
+
+      user.organizationId = currentUser.organizationId;
+
+      await user.save();
+
+    }
+
+    // --------------------------------------------------
+    // If the user belongs to another organization,
+    // do not allow adding.
+    // --------------------------------------------------
     if (
-      user.organizationId?.toString() !==
-      currentUser.organizationId?.toString()
+      user.organizationId.toString() !==
+      currentUser.organizationId.toString()
     ) {
       throw new AppError(
         'User belongs to another organization.',
@@ -356,7 +391,7 @@ export const addUserToGroup = async (
     }
 
     const exists = accessGroup.users.some(
-      id => id.toString() === userId
+      id => id.toString() === user._id.toString()
     );
 
     if (exists) {
@@ -371,10 +406,13 @@ export const addUserToGroup = async (
 
     await accessGroup.save();
 
-    sendSuccess(res, {
-      message: 'User added successfully.',
-      accessGroup,
-    });
+    sendSuccess(
+      res,
+      {
+        message: 'User added successfully.',
+        accessGroup,
+      }
+    );
 
   } catch (err) {
     next(err);
@@ -417,6 +455,17 @@ export const removeUserFromGroup = async (
       );
     }
 
+    // Verify that the user exists
+    const user = await User.findById(userId);
+
+    if (!user) {
+      throw new AppError(
+        'User not found.',
+        404,
+        'USER_NOT_FOUND'
+      );
+    }
+
     const exists = accessGroup.users.some(
       id => id.toString() === userId
     );
@@ -444,6 +493,7 @@ export const removeUserFromGroup = async (
     next(err);
   }
 };
+
 
 /**
  * DELETE /api/access-groups/:id

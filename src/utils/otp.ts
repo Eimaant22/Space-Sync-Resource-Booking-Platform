@@ -33,17 +33,17 @@ const sendOTPEmail = async (
                 <!-- Header -->
                 <div style="background:linear-gradient(135deg,#4F46E5,#7C3AED);padding:32px;text-align:center;color:#ffffff;">
                     <h1 style="margin:0;font-size:28px;font-weight:700;">
-                        Local Skill Exchange
+                        SpaceSync
                     </h1>
                     <p style="margin:12px 0 0;font-size:15px;opacity:.95;">
-                        Learn. Teach. Connect.
+                        Smart Resource Booking Platform
                     </p>
                 </div>
 
                 <!-- Body -->
                 <div style="padding:40px 32px;color:#374151;line-height:1.7;">
                     <h2 style="margin-top:0;color:#111827;">
-                        Verify Your Email
+                        Verify Your Email Address
                     </h2>
 
                     <p>
@@ -51,8 +51,12 @@ const sendOTPEmail = async (
                     </p>
 
                     <p>
-                        Thanks for joining <strong>Local Skill Exchange</strong>.
-                        Use the verification code below to complete your request.
+                        Thank you for choosing <strong>SpaceSync</strong>.
+                        To continue using our Resource Booking Platform, please verify your email address using the One-Time Password (OTP) below.
+                    </p>
+
+                    <p>
+                        Enter this verification code in the application to complete the email verification process and proceed with your signup request.
                     </p>
 
                     <!-- OTP Box -->
@@ -73,16 +77,14 @@ const sendOTPEmail = async (
                     </div>
 
                     <p style="text-align:center;font-size:15px;color:#6B7280;">
-                        This code will expire in
+                        This verification code will expire in
                         <strong style="color:#111827;">10 minutes</strong>.
                     </p>
 
                     <hr style="border:none;border-top:1px solid #E5E7EB;margin:32px 0;" />
 
                     <p style="font-size:14px;color:#6B7280;">
-                        If you didn't request this verification code,
-                        you can safely ignore this email. No changes will
-                        be made to your account.
+                        If you did not request this verification code, you can safely ignore this email. No signup request will be created unless your email address is verified.
                     </p>
                 </div>
 
@@ -95,10 +97,10 @@ const sendOTPEmail = async (
                     font-size:13px;
                     border-top:1px solid #E5E7EB;
                 ">
-                    <strong style="color:#374151;">Local Skill Exchange</strong><br/>
-                    Empowering communities through shared skills.<br/><br/>
+                    <strong style="color:#374151;">SpaceSync</strong><br/>
+                    Secure Resource Booking Platform<br/><br/>
 
-                    © ${new Date().getFullYear()} Local Skill Exchange. All rights reserved.
+                    © ${new Date().getFullYear()} SpaceSync. All rights reserved.
                 </div>
 
             </div>
@@ -110,7 +112,11 @@ const sendOTPEmail = async (
 export const sendSignupOTP = async (email: string): Promise<void> => {
     const otp = generateOTP();
     await storeOTP(signupKey(email), otp);
-    await sendOTPEmail(email, 'Verify your Skill Exchange account', otp);
+    await sendOTPEmail(
+        email,
+        'Verify your SpaceSync email address',
+        otp
+    );
 };
 
 export const verifySignupOTP = async (
@@ -126,7 +132,11 @@ export const verifySignupOTP = async (
 export const sendResetOTP = async (email: string): Promise<void> => {
     const otp = generateOTP();
     await storeOTP(resetKey(email), otp);
-    await sendOTPEmail(email, 'Reset your Skill Exchange password', otp);
+    await sendOTPEmail(
+        email,
+        'Reset your SpaceSync account password',
+        otp
+    );
 };
 
 export const verifyResetOTP = async (

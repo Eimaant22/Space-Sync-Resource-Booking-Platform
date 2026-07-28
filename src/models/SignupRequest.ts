@@ -50,7 +50,6 @@ const SignupRequestSchema = new Schema<ISignupRequest>(
     password: {
       type: String,
       required: true,
-      select: false,
     },
 
     role: {

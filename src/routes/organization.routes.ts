@@ -5,6 +5,7 @@ import {
   getOrganizations,
   getOrganizationById,
   updateOrganization,
+  removeUserFromOrganization,
   deleteOrganization,
   assignSpaceAdmin,
 } from '../controllers/organization.controller';
@@ -52,6 +53,14 @@ router.patch(
   protect,
   authorize('super_admin'),
   updateOrganization
+);
+
+//Remove user from Organization
+router.patch(
+  '/remove-user-from-organization/:userId',
+  protect,
+  authorize('space_admin'),
+  removeUserFromOrganization
 );
 
 /**

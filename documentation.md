@@ -15,39 +15,83 @@ Unless noted otherwise, all request/response bodies are `application/json`, and 
 
 # Module 1 (Part 1) – Signup Request Management
 
-## Module Overview
+# Module Overview
 
-The **Signup Request Management Module** implements a **Super Admin Approval Workflow** for new user registrations.
+The **Signup Request Management Module** implements a secure **Super Admin Approval Workflow** for new user registrations in the **SpaceSync Resource Booking Platform**.
 
-Instead of creating a user account immediately after registration, the system stores every registration as a **Signup Request**. The request remains in **Pending** status until it is reviewed by the **Super Admin**.
+Unlike traditional registration systems, users are **not allowed to create an account directly**. Instead, every new user must first submit a **Signup Request**, which is reviewed by the Super Admin before an account is created.
 
-The Super Admin can:
+To enhance security, the system now performs **Email OTP Verification** before allowing a signup request to be submitted. This ensures that the applicant actually owns the email address being used and prevents fake or unauthorized registration requests.
 
-- View all signup requests
-- Filter requests by status
-- View complete request details
-- Approve signup requests
-- Reject signup requests
-- View processed request history
+The complete registration workflow is:
 
-### Approval Workflow
+1. User fills the registration form.
+2. User clicks **Send OTP**.
+3. System sends a One-Time Password (OTP) to the provided email.
+4. User enters the OTP.
+5. System verifies the OTP.
+6. Email is temporarily marked as verified.
+7. User submits the Signup Request.
+8. Request is stored with **Pending** status.
+9. Super Admin reviews the request.
+10. Super Admin either approves or rejects the request.
 
-When a request is **approved**:
+When a request is approved:
 
-- A new user account is automatically created.
-- The signup request status changes to **Approved**.
-- The approving administrator is recorded.
-- The approval timestamp is saved.
-- An approval email is sent to the applicant.
-- An audit log is created.
+- A new user account is created.
+- The user's password (already hashed) is copied into the User collection.
+- Request status becomes **Approved**.
+- Approval date is recorded.
+- Reviewing administrator is recorded.
+- Approval email can be sent.
+- Audit Log entry is created.
 
-When a request is **rejected**:
+When a request is rejected:
 
-- The signup request status changes to **Rejected**.
-- The reviewing administrator is recorded.
-- The rejection timestamp is saved.
-- A rejection email is sent.
-- An audit log is created.
+- Request status becomes **Rejected**.
+- Reviewing administrator is recorded.
+- Rejection timestamp is stored.
+- Rejection email can be sent.
+- Audit Log entry is created.
+
+---
+
+# Registration Workflow
+
+```text
+Fill Registration Form
+          │
+          ▼
+     Send OTP
+          │
+          ▼
+ OTP sent to Email
+          │
+          ▼
+ Enter Verification Code
+          │
+          ▼
+ Verify OTP
+          │
+          ▼
+ Email Verified (Redis - 15 Minutes)
+          │
+          ▼
+ Submit Signup Request
+          │
+          ▼
+ Pending Request Created
+          │
+          ▼
+ Super Admin Review
+      ┌──────────────┐
+      │              │
+      ▼              ▼
+ Approve          Reject
+      │              │
+      ▼              ▼
+ User Created    Request Rejected
+```
 
 ---
 
@@ -55,9 +99,19 @@ When a request is **rejected**:
 
 | Model | Purpose |
 |--------|---------|
-| SignupRequest | Stores user registration requests awaiting approval |
-| User | Creates the actual user account after approval |
-| AuditLog | Records approval and rejection activities |
+| SignupRequest | Stores pending registration requests |
+| User | Stores approved users |
+| AuditLog | Records important system activities |
+
+---
+
+# External Services Used
+
+| Service | Purpose |
+|----------|---------|
+| Redis | Stores OTPs and temporary email verification status |
+| Nodemailer | Sends OTP emails |
+| MongoDB | Stores signup requests and users |
 
 ---
 
@@ -73,26 +127,42 @@ signup_requests
 
 | Field | Type | Required | Description |
 |--------|------|----------|-------------|
-| username | String | ✅ Yes | Unique username |
-| name | String | ✅ Yes | Full name |
-| email | String | ✅ Yes | User email |
-| password | String (Hashed) | ✅ Yes | Encrypted password |
+| username | String | ✅ Yes | Username selected by applicant |
+| name | String | ✅ Yes | Full Name |
+| email | String | ✅ Yes | Applicant Email |
+| password | String (Hashed) | ✅ Yes | Encrypted Password |
 | role | Enum | ✅ Yes | member / guest / space_admin |
-| phone | String | ❌ No | Contact number |
-| photoUrl | String | ❌ No | Profile image URL |
+| phone | String | ❌ No | Contact Number |
+| photoUrl | String | ❌ No | Profile Photo |
 | status | Enum | ✅ Yes | pending / approved / rejected |
-| approvedBy | ObjectId(User) | ❌ No | Super Admin who processed the request |
-| approvedAt | Date | ❌ No | Approval or rejection timestamp |
-| createdAt | Date | Auto | Request creation time |
-| updatedAt | Date | Auto | Last update time |
+| approvedBy | ObjectId(User) | ❌ No | Reviewing Super Admin |
+| approvedAt | Date | ❌ No | Approval/Rejection Time |
+| createdAt | Date | Auto | Creation Time |
+| updatedAt | Date | Auto | Last Modification Time |
 
 ---
 
-# Controller: submitSignupRequest
+# Signup Request Routes
+
+| Method | Endpoint | Access |
+|----------|----------|--------|
+| POST | `/api/signup-requests/send-otp` | Public |
+| POST | `/api/signup-requests/verify-otp` | Public |
+| POST | `/api/signup-requests` | Public |
+| GET | `/api/signup-requests` | Super Admin |
+| GET | `/api/signup-requests/history` | Super Admin |
+| GET | `/api/signup-requests/:id` | Super Admin |
+| PATCH | `/api/signup-requests/:id/approve` | Super Admin |
+| PATCH | `/api/signup-requests/:id/reject` | Super Admin |
+
+---
+
+
+# Controller: sendSignupRequestOTP
 
 ## Purpose
 
-Allows new users to submit a registration request. No user account is created immediately. Instead, the request is stored in **Pending** status until reviewed by the Super Admin.
+Sends a One-Time Password (OTP) to the applicant's email address. The OTP is required before a signup request can be submitted. This verifies that the email address belongs to the applicant.
 
 ---
 
@@ -100,55 +170,43 @@ Allows new users to submit a registration request. No user account is created im
 
 | Property | Value |
 |----------|-------|
-| Controller | submitSignupRequest |
+| Controller | sendSignupRequestOTP |
 | Method | POST |
-| Endpoint | `/api/signup-requests` |
+| Endpoint | `/api/signup-requests/send-otp` |
 | Authentication Required | No |
 | Authorization Middleware | No |
 | Allowed Roles | Public |
 
 ---
 
-## Request Fields
+## Request Body
 
 | Field | Type | Required | Description |
 |--------|------|----------|-------------|
-| username | String | ✅ Yes | Unique username |
-| name | String | ✅ Yes | Full name |
-| email | String | ✅ Yes | Email address |
-| password | String | ✅ Yes | Account password |
-| role | Enum | ✅ Yes | member / guest / space_admin |
-| phone | String | ❌ No | Contact number |
-| photoUrl | String | ❌ No | Profile image URL |
+| email | String | ✅ Yes | Applicant Email Address |
 
 ---
 
 ## Example Request
 
 ```http
-POST /api/signup-requests
+POST /api/signup-requests/send-otp
 ```
 
 ```json
 {
-  "username": "john",
-  "name": "John Doe",
-  "email": "john@gmail.com",
-  "password": "password123",
-  "role": "member",
-  "phone": "03001234567",
-  "photoUrl": "https://example.com/profile.jpg"
+  "email": "john@gmail.com"
 }
 ```
 
 ---
 
-## Success Response (201)
+## Success Response (200)
 
 ```json
 {
   "success": true,
-  "message": "Signup request submitted successfully. Please wait for approval from the Super Admin."
+  "message": "OTP has been sent to your email."
 }
 ```
 
@@ -161,25 +219,7 @@ POST /api/signup-requests
 ```json
 {
   "success": false,
-  "message": "username, name, email, role and password are required."
-}
-```
-
-### 422 Invalid Username
-
-```json
-{
-  "success": false,
-  "message": "Invalid username."
-}
-```
-
-### 422 Invalid Role
-
-```json
-{
-  "success": false,
-  "message": "Invalid role."
+  "message": "Email is required."
 }
 ```
 
@@ -205,26 +245,26 @@ POST /api/signup-requests
 
 ## Frontend Usage
 
-This endpoint is used by the Registration page. After successful submission, redirect the user to a **"Request Submitted Successfully"** screen informing them that their request is awaiting Super Admin approval.
-
-Do **not** redirect the user to the Login page.
+When the applicant enters an email address and clicks the **Send OTP** button, the frontend calls this endpoint. If successful, the OTP input field is displayed so the user can enter the verification code.
 
 ---
 
 ## Backend Review
 
-- ✅ Prevents duplicate usernames and email addresses.
-- ✅ Prevents multiple pending requests from the same user.
-- ✅ Password is securely hashed before storing.
-- ✅ No user account is created until approval.
+- ✅ Prevents sending OTP to existing users.
+- ✅ Prevents duplicate pending signup requests.
+- ✅ Generates a secure 6-digit OTP.
+- ✅ Stores OTP securely in Redis.
+- ✅ OTP expires automatically after 10 minutes.
+- ✅ Sends verification email using Nodemailer.
 
 ---
 
-# Controller: getSignupRequests
+# Controller: verifySignupRequestOTP
 
 ## Purpose
 
-Returns all signup requests submitted by users. Administrators can optionally filter requests by their approval status.
+Verifies the OTP entered by the applicant. Once the OTP is successfully verified, the email is temporarily marked as verified in Redis, allowing the user to submit a signup request.
 
 ---
 
@@ -232,28 +272,35 @@ Returns all signup requests submitted by users. Administrators can optionally fi
 
 | Property | Value |
 |----------|-------|
-| Controller | getSignupRequests |
-| Method | GET |
-| Endpoint | `/api/signup-requests` |
-| Authentication Required | Yes |
-| Authorization Middleware | Yes |
-| Allowed Roles | Super Admin |
+| Controller | verifySignupRequestOTP |
+| Method | POST |
+| Endpoint | `/api/signup-requests/verify-otp` |
+| Authentication Required | No |
+| Authorization Middleware | No |
+| Allowed Roles | Public |
 
 ---
 
-## Query Parameters
+## Request Body
 
-| Parameter | Required | Allowed Values |
-|-----------|----------|----------------|
-| status | ❌ No | pending, approved, rejected |
+| Field | Type | Required | Description |
+|--------|------|----------|-------------|
+| email | String | ✅ Yes | Applicant Email |
+| otp | String | ✅ Yes | 6-digit Verification Code |
 
 ---
 
 ## Example Request
 
 ```http
-GET /api/signup-requests?status=pending
-Authorization: Bearer <SUPER_ADMIN_TOKEN>
+POST /api/signup-requests/verify-otp
+```
+
+```json
+{
+  "email": "john@gmail.com",
+  "otp": "526813"
+}
 ```
 
 ---
@@ -263,32 +310,29 @@ Authorization: Bearer <SUPER_ADMIN_TOKEN>
 ```json
 {
   "success": true,
-  "requests": [
-    {
-      "_id": "...",
-      "username": "john",
-      "name": "John Doe",
-      "email": "john@gmail.com",
-      "role": "member",
-      "phone": "03001234567",
-      "status": "pending",
-      "createdAt": "...",
-      "updatedAt": "..."
-    }
-  ]
+  "message": "Email verified successfully."
 }
 ```
 
 ---
 
-## Error Response
+## Error Responses
 
-### 422 Invalid Status
+### 422 Validation Error
 
 ```json
 {
   "success": false,
-  "message": "Invalid status filter."
+  "message": "Email and OTP are required."
+}
+```
+
+### 400 Invalid OTP
+
+```json
+{
+  "success": false,
+  "message": "Invalid or expired OTP."
 }
 ```
 
@@ -296,29 +340,26 @@ Authorization: Bearer <SUPER_ADMIN_TOKEN>
 
 ## Frontend Usage
 
-This API powers:
-
-- Pending Requests page
-- Approved Requests page
-- Rejected Requests page
-
-The frontend only needs to change the `status` query parameter to retrieve the required list.
+After receiving the OTP via email, the applicant enters the code and clicks **Verify OTP**. If verification succeeds, the frontend should enable the **Submit Signup Request** button.
 
 ---
 
 ## Backend Review
 
-- ✅ Supports filtering by request status.
-- ✅ Returns requests sorted by latest submissions.
-- ✅ Accessible only to Super Admin.
+- ✅ Verifies OTP stored in Redis.
+- ✅ Removes OTP after successful verification.
+- ✅ Prevents OTP reuse.
+- ✅ Creates a temporary email verification flag.
+- ✅ Verification remains valid for 15 minutes.
 
----
 
-# Controller: getSignupRequestById
+# Controller: approveSignupRequest
 
 ## Purpose
 
-Returns complete details of a single signup request.
+Allows the **Super Admin** to approve a pending signup request. Once approved, the applicant is converted into a real user account in the **User** collection.
+
+The signup request status is updated to **Approved**, the approving administrator and approval timestamp are recorded, and an audit log entry is created.
 
 ---
 
@@ -326,9 +367,9 @@ Returns complete details of a single signup request.
 
 | Property | Value |
 |----------|-------|
-| Controller | getSignupRequestById |
-| Method | GET |
-| Endpoint | `/api/signup-requests/:id` |
+| Controller | approveSignupRequest |
+| Method | PATCH |
+| Endpoint | `/api/signup-requests/:id/approve` |
 | Authentication Required | Yes |
 | Authorization Middleware | Yes |
 | Allowed Roles | Super Admin |
@@ -346,7 +387,7 @@ Returns complete details of a single signup request.
 ## Example Request
 
 ```http
-GET /api/signup-requests/685abc1234567890abcdef11
+PATCH /api/signup-requests/685abc1234567890abcdef11/approve
 Authorization: Bearer <SUPER_ADMIN_TOKEN>
 ```
 
@@ -357,21 +398,15 @@ Authorization: Bearer <SUPER_ADMIN_TOKEN>
 ```json
 {
   "success": true,
-  "signupRequest": {
+  "message": "Signup request approved successfully.",
+  "user": {
     "_id": "...",
     "username": "john",
     "name": "John Doe",
     "email": "john@gmail.com",
     "role": "member",
-    "phone": "03001234567",
-    "status": "approved",
-    "approvedAt": "...",
-    "approvedBy": {
-      "_id": "...",
-      "name": "Super Admin",
-      "email": "admin@gmail.com",
-      "role": "super_admin"
-    }
+    "isVerified": true,
+    "isActive": true
   }
 }
 ```
@@ -380,7 +415,7 @@ Authorization: Bearer <SUPER_ADMIN_TOKEN>
 
 ## Error Responses
 
-### 400 Bad Request
+### 400 Invalid Signup Request ID
 
 ```json
 {
@@ -389,7 +424,16 @@ Authorization: Bearer <SUPER_ADMIN_TOKEN>
 }
 ```
 
-### 404 Not Found
+### 400 Request Already Processed
+
+```json
+{
+  "success": false,
+  "message": "This request has already been processed."
+}
+```
+
+### 404 Signup Request Not Found
 
 ```json
 {
@@ -398,20 +442,461 @@ Authorization: Bearer <SUPER_ADMIN_TOKEN>
 }
 ```
 
+### 404 User Not Found
+
+```json
+{
+  "success": false,
+  "message": "User not found."
+}
+```
+
+### 409 User Already Exists
+
+```json
+{
+  "success": false,
+  "message": "User already exists."
+}
+```
+
 ---
 
 ## Frontend Usage
 
-Used to display complete signup request information on the **Request Details** page before approval or rejection.
+This endpoint is called when the Super Admin clicks the **Approve** button for a pending signup request.
+
+After approval:
+
+- The request is removed from the Pending Requests page.
+- It appears in the Signup Request History page.
+- A new verified and active user account is created.
+- The applicant can log in using the approved credentials.
 
 ---
 
 ## Backend Review
 
-- ✅ Returns complete applicant information.
-- ✅ Includes reviewer information if already processed.
-- ✅ Accessible only by Super Admin.
+- ✅ Validates the Signup Request ID.
+- ✅ Prevents duplicate approvals.
+- ✅ Prevents duplicate user accounts.
+- ✅ Creates a verified and active user account.
+- ✅ Stores approver information.
+- ✅ Records the approval timestamp.
+- ✅ Creates an audit log.
+
 ---
+
+# Controller: rejectSignupRequest
+
+## Purpose
+
+Allows the **Super Admin** to reject a pending signup request.
+
+No user account is created. The request status changes to **Rejected**, reviewer information is stored, and the rejection activity is recorded in the audit logs.
+
+---
+
+## API Information
+
+| Property | Value |
+|----------|-------|
+| Controller | rejectSignupRequest |
+| Method | PATCH |
+| Endpoint | `/api/signup-requests/:id/reject` |
+| Authentication Required | Yes |
+| Authorization Middleware | Yes |
+| Allowed Roles | Super Admin |
+
+---
+
+## URL Parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| id | ObjectId | ✅ Yes | Signup Request ID |
+
+---
+
+## Example Request
+
+```http
+PATCH /api/signup-requests/685abc1234567890abcdef11/reject
+Authorization: Bearer <SUPER_ADMIN_TOKEN>
+```
+
+---
+
+## Success Response (200)
+
+```json
+{
+  "success": true,
+  "message": "Signup request rejected successfully."
+}
+```
+
+---
+
+## Error Responses
+
+### 400 Invalid Signup Request ID
+
+```json
+{
+  "success": false,
+  "message": "Invalid signup request id."
+}
+```
+
+### 400 Request Already Processed
+
+```json
+{
+  "success": false,
+  "message": "This request has already been processed."
+}
+```
+
+### 404 Signup Request Not Found
+
+```json
+{
+  "success": false,
+  "message": "Signup request not found."
+}
+```
+
+### 404 User Not Found
+
+```json
+{
+  "success": false,
+  "message": "User not found."
+}
+```
+
+---
+
+## Frontend Usage
+
+This endpoint is called when the Super Admin clicks the **Reject** button for a pending signup request.
+
+After rejection:
+
+- The request is removed from the Pending Requests page.
+- It appears in the Signup Request History page.
+- No user account is created.
+
+---
+
+## Backend Review
+
+- ✅ Validates the Signup Request ID.
+- ✅ Rejects only pending requests.
+- ✅ Stores reviewer information.
+- ✅ Stores the rejection timestamp.
+- ✅ Creates an audit log.
+- ✅ Does not create a user account.
+
+---
+
+# Controller: getSignupRequestHistory
+
+## Purpose
+
+Returns all processed signup requests, including both **Approved** and **Rejected** requests.
+
+This endpoint enables the Super Admin to review the complete signup request history.
+
+---
+
+## API Information
+
+| Property | Value |
+|----------|-------|
+| Controller | getSignupRequestHistory |
+| Method | GET |
+| Endpoint | `/api/signup-requests/history` |
+| Authentication Required | Yes |
+| Authorization Middleware | Yes |
+| Allowed Roles | Super Admin |
+
+---
+
+## Example Request
+
+```http
+GET /api/signup-requests/history
+Authorization: Bearer <SUPER_ADMIN_TOKEN>
+```
+
+---
+
+## Success Response (200)
+
+```json
+{
+  "success": true,
+  "total": 2,
+  "signupRequests": [
+    {
+      "_id": "...",
+      "username": "john",
+      "name": "John Doe",
+      "email": "john@gmail.com",
+      "role": "member",
+      "status": "approved",
+      "approvedAt": "2026-07-28T10:15:00.000Z",
+      "approvedBy": {
+        "_id": "...",
+        "name": "Super Admin",
+        "email": "admin@spacesync.com",
+        "role": "super_admin"
+      }
+    },
+    {
+      "_id": "...",
+      "username": "alice",
+      "name": "Alice Smith",
+      "email": "alice@gmail.com",
+      "role": "guest",
+      "status": "rejected",
+      "approvedAt": "2026-07-28T12:10:00.000Z",
+      "approvedBy": {
+        "_id": "...",
+        "name": "Super Admin",
+        "email": "admin@spacesync.com",
+        "role": "super_admin"
+      }
+    }
+  ]
+}
+```
+
+---
+
+## Frontend Usage
+
+This endpoint powers the **Signup Request History** page.
+
+The page displays:
+
+- Approved signup requests
+- Rejected signup requests
+- Reviewer information
+- Processing date and time
+
+---
+
+## Backend Review
+
+- ✅ Returns only approved and rejected requests.
+- ✅ Excludes password information.
+- ✅ Populates Super Admin details.
+- ✅ Returns the latest processed requests first.
+- ✅ Accessible only to the Super Admin.
+
+---
+
+# Module 1 (Part 3) – Signup Request Workflow
+
+## Complete Signup Request Workflow
+
+The Signup Request Management module follows a secure approval-based registration workflow to ensure that only verified users can request access to the SpaceSync Resource Booking Platform.
+
+Unlike traditional registration systems, a user account is **not created immediately**. Instead, the user must first verify ownership of their email address using an OTP before submitting a signup request. The request is then reviewed by the Super Admin.
+
+---
+
+## Step 1 — Send OTP
+
+The applicant enters an email address on the registration page and clicks the **Send OTP** button.
+
+The backend:
+
+- Checks whether the email already belongs to an existing user.
+- Checks whether there is already a pending signup request for that email.
+- Generates a six-digit OTP.
+- Stores the OTP securely in Redis with a 10-minute expiration.
+- Sends the OTP to the applicant's email address.
+
+---
+
+## Step 2 — Verify OTP
+
+After receiving the OTP, the applicant enters it into the verification field and clicks **Verify OTP**.
+
+The backend:
+
+- Validates the OTP against Redis.
+- Deletes the OTP after successful verification.
+- Creates a temporary verification flag in Redis (`signup_verified:<email>`).
+- Stores the verification flag for 15 minutes.
+
+Only verified email addresses are allowed to submit signup requests.
+
+---
+
+## Step 3 — Submit Signup Request
+
+Once the email has been verified, the applicant completes the registration form and submits the signup request.
+
+The backend performs the following validations:
+
+- Required fields
+- Username format
+- Password length
+- Allowed role
+- Email verification status
+- Duplicate user check
+- Duplicate pending request check
+
+If all validations succeed:
+
+- The password is hashed.
+- The signup request is stored in the database.
+- The temporary Redis verification flag is removed.
+- An audit log entry is created.
+- The applicant receives a confirmation message indicating that the request is awaiting Super Admin approval.
+
+---
+
+## Step 4 — Super Admin Reviews Request
+
+The Super Admin logs into the SpaceSync dashboard and reviews all pending signup requests.
+
+The administrator can:
+
+- View request details.
+- Approve the request.
+- Reject the request.
+
+---
+
+## Step 5 — Approve Signup Request
+
+If the Super Admin approves the request:
+
+- A new user account is created.
+- The stored hashed password is copied into the User collection.
+- The account is marked as verified.
+- The account is activated.
+- The request status becomes **Approved**.
+- The approving administrator is recorded.
+- The approval timestamp is saved.
+- An audit log entry is created.
+
+The applicant can now log in to the SpaceSync Resource Booking Platform.
+
+---
+
+## Step 6 — Reject Signup Request
+
+If the Super Admin rejects the request:
+
+- No user account is created.
+- The request status becomes **Rejected**.
+- The reviewer information is stored.
+- The rejection timestamp is saved.
+- An audit log entry is created.
+
+The applicant must submit a new signup request if they wish to apply again.
+
+---
+
+# Overall Registration Flow
+
+```text
+Applicant
+    │
+    ▼
+Enter Email
+    │
+    ▼
+Send OTP
+    │
+    ▼
+OTP Sent to Email
+    │
+    ▼
+Enter OTP
+    │
+    ▼
+Verify OTP
+    │
+    ▼
+Email Verified
+    │
+    ▼
+Complete Registration Form
+    │
+    ▼
+Submit Signup Request
+    │
+    ▼
+Pending Signup Request
+    │
+    ▼
+Super Admin Reviews Request
+      │
+      ├──────────────► Reject
+      │                    │
+      │                    ▼
+      │            Request Rejected
+      │
+      ▼
+Approve
+      │
+      ▼
+Create User Account
+      │
+      ▼
+Applicant Can Log In
+```
+
+---
+
+# Security Features
+
+The Signup Request module provides multiple layers of security:
+
+- ✅ Email ownership verification using OTP.
+- ✅ OTP expires automatically after 10 minutes.
+- ✅ Verified email session expires after 15 minutes.
+- ✅ Passwords are securely hashed before storage.
+- ✅ Duplicate users are prevented.
+- ✅ Duplicate pending requests are prevented.
+- ✅ User accounts are created only after Super Admin approval.
+- ✅ Every approval and rejection is recorded in the Audit Log.
+- ✅ Only the Super Admin can process signup requests.
+
+---
+
+# Technologies Used
+
+| Component | Purpose |
+|----------|---------|
+| MongoDB | Stores signup requests and user accounts |
+| Redis | Stores OTPs and temporary email verification flags |
+| Nodemailer | Sends OTP verification emails |
+| JWT | Authenticates Super Admin operations |
+| bcrypt | Hashes user passwords |
+| Express.js | REST API implementation |
+| Mongoose | MongoDB object modeling |
+| Audit Log Module | Records approval and rejection activities |
+
+---
+
+## Module Summary
+
+The Signup Request Management module provides a secure, approval-based registration system for the SpaceSync Resource Booking Platform.
+
+The workflow combines email verification, temporary Redis storage, administrator approval, password hashing, and audit logging to ensure that only verified and authorized users are allowed to access the platform.
+
+---
+
+
 
 # Module 1 part 2 – Authentication Module
 
@@ -2063,7 +2548,42 @@ Used by the **Super Admin** to update organization details from the **Organizati
 - ✅ Supports partial updates.
 - ✅ Stores update history in the Audit Log.
 - 💡 **Testing Role:** Super Admin.
+---
+# 8. Remove User From Organization
 
+## Purpose
+
+Removes a user from an organization. The user is removed from all access groups associated with the organization and their organization assignment is cleared.
+
+---
+
+## API Information
+
+| Property | Value |
+|----------|-------|
+| Controller | removeUserFromOrganization |
+| Method | PATCH |
+| Endpoint | `/api/organizations/remove-user/:userId` |
+| Authentication Required | Yes |
+| Authorization Middleware | Yes |
+| Allowed Roles | Space Admin |
+
+---
+
+## URL Parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| userId | ObjectId | ✅ Yes | User ID to remove from the organization |
+
+---
+
+## Example Request
+
+```http
+PATCH /api/organizations/remove-user/685abc1234567890abcdef11
+Authorization: Bearer <token>
+---
 # Controller: deleteOrganization
 
 ## Purpose
@@ -5959,7 +6479,13 @@ This API is used from the **Edit Access Group** page when an administrator updat
 
 ## Purpose
 
-Adds an existing user to an access group. Duplicate users are automatically prevented.
+Adds an existing user to an access group within the Space Admin's organization.
+
+If the selected user has **no organization assigned** (`organizationId = null`), the system automatically assigns the user to the Space Admin's organization before adding them to the access group.
+
+If the user already belongs to the same organization as the Space Admin, they are added directly to the access group.
+
+If the user belongs to a different organization, the request is rejected.
 
 ---
 
@@ -5972,7 +6498,7 @@ Adds an existing user to an access group. Duplicate users are automatically prev
 | Endpoint | `/api/access-groups/:id/add-user` |
 | Authentication Required | Yes |
 | Authorization Middleware | Yes |
-| Allowed Roles |Space Admin |
+| Allowed Roles | Space Admin |
 
 ---
 
@@ -5988,7 +6514,7 @@ Adds an existing user to an access group. Duplicate users are automatically prev
 
 | Field | Type | Required | Description |
 |------|------|----------|-------------|
-| userId | ObjectId | ✅ Yes | User to be added into the access group |
+| userId | ObjectId | ✅ Yes | ID of the user to add to the access group |
 
 ---
 
@@ -5996,7 +6522,7 @@ Adds an existing user to an access group. Duplicate users are automatically prev
 
 ```http
 PATCH /api/access-groups/685abc1234567890abcdef11/add-user
-Authorization: Bearer <token>
+Authorization: Bearer <SPACE_ADMIN_TOKEN>
 Content-Type: application/json
 ```
 
@@ -6014,15 +6540,35 @@ Content-Type: application/json
 {
   "success": true,
   "message": "User added successfully.",
-  "accessGroup": {}
+  "accessGroup": {
+    "_id": "685abc1234567890abcdef11",
+    "name": "Research Staff",
+    "organizationId": "68860b000000000000000003",
+    "users": [
+      "...existing users...",
+      "685abc1234567890abcdef55"
+    ]
+  }
 }
 ```
 
 ---
 
+## Automatic Organization Assignment
+
+If the selected user's `organizationId` is **null**, the system will automatically:
+
+- Assign the user to the Space Admin's organization.
+- Save the updated user record.
+- Add the user to the selected access group.
+
+This allows newly created Members and Guests who have not yet joined an organization to be added without requiring a separate "Join Organization" API.
+
+---
+
 ## Error Responses
 
-### 404 Not Found
+### 404 Access Group Not Found
 
 ```json
 {
@@ -6031,6 +6577,10 @@ Content-Type: application/json
   "code": "ACCESS_GROUP_NOT_FOUND"
 }
 ```
+
+---
+
+### 404 User Not Found
 
 ```json
 {
@@ -6042,17 +6592,63 @@ Content-Type: application/json
 
 ---
 
-## Frontend Usage
+### 409 User Already in Group
 
-This API is used when an administrator selects a user and assigns them to an existing access group from the **Manage Group Members** screen.
+```json
+{
+  "success": false,
+  "message": "User already exists in this access group.",
+  "code": "USER_ALREADY_IN_GROUP"
+}
+```
 
 ---
 
+### 400 User Belongs to Another Organization
+
+Returned when the selected user already belongs to a different organization than the authenticated Space Admin.
+
+```json
+{
+  "success": false,
+  "message": "User belongs to another organization.",
+  "code": "INVALID_USER"
+}
+```
+
+---
+
+## Frontend Usage
+
+This API is used from the **Manage Group Members** screen.
+
+When a Space Admin selects a user to add:
+
+- If the user has no organization assigned, the backend automatically assigns the Space Admin's organization and adds the user to the access group.
+- If the user already belongs to the same organization, they are added directly.
+- If the user belongs to another organization, the frontend should display the returned validation error.
+
+No additional API call is required to assign an organization before adding the user to the access group.
+
+---
+
+## Backend Review
+
+- ✅ Verifies the authenticated Space Admin.
+- ✅ Ensures the access group belongs to the Space Admin's organization.
+- ✅ Verifies the selected user exists.
+- ✅ Automatically assigns the Space Admin's organization if the user's `organizationId` is `null`.
+- ✅ Prevents adding users from other organizations.
+- ✅ Prevents duplicate group membership.
+- ✅ Returns the updated access group after a successful addition.
+---
 # 6. Remove User From Group
 
 ## Purpose
 
-Removes a user from an existing access group.
+Removes an existing user from an access group within the Space Admin's organization.
+
+Removing a user from an access group **does not remove them from the organization**. The user remains a member of the organization and can later be added to another access group if required.
 
 ---
 
@@ -6065,7 +6661,7 @@ Removes a user from an existing access group.
 | Endpoint | `/api/access-groups/:id/remove-user` |
 | Authentication Required | Yes |
 | Authorization Middleware | Yes |
-| Allowed Roles |Space Admin |
+| Allowed Roles | Space Admin |
 
 ---
 
@@ -6081,7 +6677,7 @@ Removes a user from an existing access group.
 
 | Field | Type | Required | Description |
 |------|------|----------|-------------|
-| userId | ObjectId | ✅ Yes | User to be removed from the access group |
+| userId | ObjectId | ✅ Yes | ID of the user to remove from the access group |
 
 ---
 
@@ -6089,7 +6685,7 @@ Removes a user from an existing access group.
 
 ```http
 PATCH /api/access-groups/685abc1234567890abcdef11/remove-user
-Authorization: Bearer <token>
+Authorization: Bearer <SPACE_ADMIN_TOKEN>
 Content-Type: application/json
 ```
 
@@ -6107,7 +6703,14 @@ Content-Type: application/json
 {
   "success": true,
   "message": "User removed successfully.",
-  "accessGroup": {}
+  "accessGroup": {
+    "_id": "685abc1234567890abcdef11",
+    "name": "Research Staff",
+    "organizationId": "68860b000000000000000003",
+    "users": [
+      "...remaining users..."
+    ]
+  }
 }
 ```
 
@@ -6115,7 +6718,7 @@ Content-Type: application/json
 
 ## Error Responses
 
-### 404 Not Found
+### 404 Access Group Not Found
 
 ```json
 {
@@ -6127,12 +6730,45 @@ Content-Type: application/json
 
 ---
 
-## Frontend Usage
+### 404 User Not Found
 
-This API is used when an administrator removes a user from an access group. Once removed, the user immediately loses access to resources that are restricted to that group.
+Returned when the provided user ID does not exist.
+
+```json
+{
+  "success": false,
+  "message": "User not found.",
+  "code": "USER_NOT_FOUND"
+}
+```
 
 ---
 
+### 404 User Not in Group
+
+Returned when the specified user is not currently a member of the selected access group.
+
+```json
+{
+  "success": false,
+  "message": "User is not part of this access group.",
+  "code": "USER_NOT_IN_GROUP"
+}
+```
+
+---
+
+## Frontend Usage
+
+This API is used from the **Manage Group Members** screen when a Space Admin removes a user from an access group.
+
+After successful removal:
+
+- The user immediately loses access to resources restricted to that access group.
+- The user **remains a member of the organization**.
+- The user can be assigned to another access group within the same organization in the future.
+
+---
 # 7. Delete Access Group
 
 ## Purpose

@@ -12,6 +12,7 @@ export const protect = async (
     _res: Response,
     next: NextFunction
 ): Promise<void> => {
+
     try {
         const header = req.headers.authorization;
         if (!header || !header.startsWith('Bearer ')) {

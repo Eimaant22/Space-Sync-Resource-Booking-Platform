@@ -9,10 +9,17 @@ import { hashPassword } from '../utils/hash';
 import { sendSuccess } from '../utils/response';
 import AppError from '../utils/AppError';
 import { AuthRequest } from '../middleware/auth';
+import redisClient from '../config/redis';
 
 import { sendSignupApprovedEmail } from '../utils/SignUpRequestEmail';
 import { sendSignupRejectedEmail } from '../utils/SignUpRequestEmail';
 import { resolve } from 'node:dns';
+
+import {
+  sendSignupOTP,
+  verifySignupOTP,
+
+} from '../utils/otp';
 
 const isValidUsername = (
   username: string
@@ -49,12 +56,29 @@ export const submitSignupRequest = async (
       !role
     ) {
       throw new AppError(
-        'username, name, email,role  and password are required.',
+        'username, name, email, role and password are required.',
         422,
         'VALIDATION_ERROR'
       );
     }
 
+  
+    // Check Email Verification
+   
+    const verified = await redisClient.get(
+      `signup_verified:${email.toLowerCase()}`
+    );
+
+    if (!verified) {
+      throw new AppError(
+        'Please verify your email before submitting the signup request.',
+        403,
+        'EMAIL_NOT_VERIFIED'
+      );
+    }
+
+ 
+   
     if (!isValidUsername(username)) {
       throw new AppError(
         'Invalid username.',
@@ -63,6 +87,7 @@ export const submitSignupRequest = async (
       );
     }
 
+  
     if (password.length < 8) {
       throw new AppError(
         'Password must be at least 8 characters.',
@@ -71,16 +96,14 @@ export const submitSignupRequest = async (
       );
     }
 
+  
     const allowedRoles = [
       'space_admin',
       'member',
       'guest',
     ];
 
-    if (
-      role &&
-      !allowedRoles.includes(role)
-    ) {
+    if (!allowedRoles.includes(role)) {
       throw new AppError(
         'Invalid role.',
         422,
@@ -88,18 +111,17 @@ export const submitSignupRequest = async (
       );
     }
 
-    const existingUser =
-      await User.findOne({
-        $or: [
-          {
-            email: email.toLowerCase(),
-          },
-          {
-            username:
-              username.toLowerCase(),
-          },
-        ],
-      });
+    
+    const existingUser = await User.findOne({
+      $or: [
+        {
+          email: email.toLowerCase(),
+        },
+        {
+          username: username.toLowerCase(),
+        },
+      ],
+    });
 
     if (existingUser) {
       throw new AppError(
@@ -109,6 +131,9 @@ export const submitSignupRequest = async (
       );
     }
 
+ 
+    // Existing Pending Request Check
+    
     const existingRequest =
       await SignupRequest.findOne({
         $or: [
@@ -116,8 +141,7 @@ export const submitSignupRequest = async (
             email: email.toLowerCase(),
           },
           {
-            username:
-              username.toLowerCase(),
+            username: username.toLowerCase(),
           },
         ],
         status: 'pending',
@@ -134,37 +158,32 @@ export const submitSignupRequest = async (
     const hashed =
       await hashPassword(password);
 
+    
     const request =
       await SignupRequest.create({
-        username:
-          username.toLowerCase(),
-
+        username: username.toLowerCase(),
         name,
-
-        email:
-          email.toLowerCase(),
-
+        email: email.toLowerCase(),
         password: hashed,
-
-        role:
-          role || 'member',
-
+        role,
         phone,
-
         photoUrl,
       });
 
+  
+    // Remove Verification Flag
+    // Prevents reusing same OTP
+  
+    await redisClient.del(
+      `signup_verified:${email.toLowerCase()}`
+    );
+
+  
     await AuditLog.create({
-      action:
-        'Submit Signup Request',
-
-      module:
-        'Signup Request',
-
+      action: 'Submit Signup Request',
+      module: 'Signup Request',
       entityId: request._id,
-
       description: `${email} submitted a signup request.`,
-
       ipAddress: req.ip,
     });
 
@@ -176,15 +195,127 @@ export const submitSignupRequest = async (
       },
       201
     );
+
   } catch (err) {
     next(err);
   }
 };
 
+//send otp
+export const sendSignupRequestOTP = async (
+    req: Request,
+    res: Response,
+    next: NextFunction
+): Promise<void> => {
+
+    try {
+
+        const { email } = req.body;
+
+        if (!email) {
+            throw new AppError(
+                "Email is required.",
+                422,
+                "VALIDATION_ERROR"
+            );
+        }
+
+        const existingUser = await User.findOne({
+            email: email.toLowerCase(),
+        });
+
+        if (existingUser) {
+            throw new AppError(
+                "User already exists.",
+                409,
+                "USER_ALREADY_EXISTS"
+            );
+        }
+
+        const existingRequest =
+            await SignupRequest.findOne({
+                email: email.toLowerCase(),
+                status: "pending",
+            });
+
+        if (existingRequest) {
+            throw new AppError(
+                "A signup request is already pending.",
+                409,
+                "REQUEST_ALREADY_PENDING"
+            );
+        }
+
+        await sendSignupOTP(email.toLowerCase());
+
+        sendSuccess(res, {
+            message:
+                "OTP has been sent to your email."
+        });
+
+    } catch (err) {
+        next(err);
+    }
+
+};
+
+//verify otp
+export const verifySignupRequestOTP = async (
+    req: Request,
+    res: Response,
+    next: NextFunction
+): Promise<void> => {
+
+    try {
+
+        const { email, otp } = req.body;
+
+        if (!email || !otp) {
+            throw new AppError(
+                "Email and OTP are required.",
+                422,
+                "VALIDATION_ERROR"
+            );
+        }
+
+        const valid =
+            await verifySignupOTP(
+                email.toLowerCase(),
+                otp
+            );
+
+        if (!valid) {
+            throw new AppError(
+                "Invalid or expired OTP.",
+                400,
+                "INVALID_OTP"
+            );
+        }
+
+        // Mark this email as verified for 15 minutes
+        await redisClient.set(
+            `signup_verified:${email.toLowerCase()}`,
+            "true",
+            {
+                EX: 15 * 60,
+            }
+        );
+
+        sendSuccess(res, {
+            message:
+                "Email verified successfully."
+        });
+
+    } catch (err) {
+        next(err);
+    }
+
+};
 /**
  * GET /api/signup-requests
  * Super Admin
  */
+
 export const getSignupRequests = async (
   req: AuthRequest,
   res: Response,
@@ -195,17 +326,10 @@ export const getSignupRequests = async (
 
     const filter: any = {};
 
-    if (status) {
-      const allowedStatuses = [
-        'pending',
-        'approved',
-        'rejected',
-      ];
+    // Optional status filter
+    if (status !== undefined) {
 
-      if (
-        typeof status !== 'string' ||
-        !allowedStatuses.includes(status)
-      ) {
+      if (typeof status !== 'string') {
         throw new AppError(
           'Invalid status filter.',
           422,
@@ -213,28 +337,48 @@ export const getSignupRequests = async (
         );
       }
 
-      filter.status = status;
+      const normalizedStatus = status
+        .trim()
+        .toLowerCase();
+
+      const allowedStatuses = [
+        'pending',
+        'approved',
+        'rejected',
+      ];
+
+      if (!allowedStatuses.includes(normalizedStatus)) {
+        throw new AppError(
+          'Invalid status filter.',
+          422,
+          'VALIDATION_ERROR'
+        );
+      }
+
+      filter.status = normalizedStatus;
     }
 
     const requests = await SignupRequest.find(filter)
       .select('-password')
       .populate(
-        'reviewedBy',
-        'name email'
+        'approvedBy',
+        'name email role'
       )
       .sort({
         createdAt: -1,
       });
 
     sendSuccess(res, {
+      total: requests.length,
       requests,
     });
+
   } catch (err) {
     next(err);
   }
 };
 
-
+//get request by id
 export const getSignupRequestById = async (
   req: AuthRequest,
   res: Response,
@@ -338,28 +482,28 @@ export const approveSignupRequest = async (
       );
     }
 
-    const user = await User.create({
-      username: request.username,
-      name: request.name,
-      email: request.email,
-      password: request.password,
-      role: request.role,
-      phone: request.phone,
-      photoUrl: request.photoUrl,
-      isVerified: true,
-      isActive: true,
-    });
+  const user = await User.create({
+  username: request.username,
+  name: request.name,
+  email: request.email,
+  password: request.password,
+  role: request.role,
+  phone: request.phone,
+  photoUrl: request.photoUrl,
 
+  isVerified: true,
+  isActive: true
+});
     request.status = 'approved';
     request.approvedBy = admin._id as mongoose.Types.ObjectId;
     request.approvedAt = new Date();
 
     await request.save();
 
-    await sendSignupApprovedEmail(
-      request.email,
-      request.name
-    );
+    // await sendSignupApprovedEmail(
+    //   request.email,
+    //   request.name
+    // );
 
     await AuditLog.create({
       userId: admin._id,
@@ -432,10 +576,10 @@ export const rejectSignupRequest = async (
 
     await request.save();
 
-    await sendSignupRejectedEmail(
-      request.email,
-      request.name
-    );
+    // await sendSignupRejectedEmail(
+    //   request.email,
+    //   request.name
+    // );
 
     await AuditLog.create({
       userId: admin._id,

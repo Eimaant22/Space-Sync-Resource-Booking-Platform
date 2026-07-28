@@ -1,6 +1,8 @@
 import express from 'express';
 
 import {
+  sendSignupRequestOTP,
+  verifySignupRequestOTP,
   submitSignupRequest,
   getSignupRequests,
   getSignupRequestById,
@@ -14,8 +16,23 @@ import { authorize } from '../middleware/authorize';
 
 const router = express.Router();
 
+/**
+ * Public Routes
+ */
 
-// Submit a signup request
+// Send Email OTP
+router.post(
+  '/send-otp',
+  sendSignupRequestOTP
+);
+
+// Verify Email OTP
+router.post(
+  '/verify-otp',
+  verifySignupRequestOTP
+);
+
+// Submit Signup Request
 router.post(
   '/',
   submitSignupRequest
@@ -24,6 +41,7 @@ router.post(
 /**
  * Super Admin Routes
  */
+
 router.get(
   '/',
   protect,
@@ -31,7 +49,6 @@ router.get(
   getSignupRequests
 );
 
-// Get signup request history
 router.get(
   '/history',
   protect,
@@ -39,7 +56,6 @@ router.get(
   getSignupRequestHistory
 );
 
-// Get signup request by ID
 router.get(
   '/:id',
   protect,
@@ -47,7 +63,6 @@ router.get(
   getSignupRequestById
 );
 
-// Approve signup request
 router.patch(
   '/:id/approve',
   protect,
@@ -55,7 +70,6 @@ router.patch(
   approveSignupRequest
 );
 
-// Reject signup request
 router.patch(
   '/:id/reject',
   protect,
