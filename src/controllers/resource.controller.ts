@@ -11,7 +11,6 @@ import { sendSuccess } from '../utils/response';
 import { AuthRequest } from '../middleware/auth';
 import AccessGroup from '../models/AccessGroup';
 
-
 /**
  * POST /api/resources
  * Space Admin
@@ -31,6 +30,16 @@ export const createResource = async (
         'User not found.',
         404,
         'USER_NOT_FOUND'
+      );
+    }
+
+ 
+    // Organization Validation-Space-admin with null organization is not allowed to create resource
+    if (!user.organizationId) {
+      throw new AppError(
+        'You must belong to an organization before creating resources.',
+        403,
+        'ORGANIZATION_REQUIRED'
       );
     }
 
@@ -102,7 +111,7 @@ export const createResource = async (
       // Ensure the access group belongs to the same organization
       if (
         accessGroup.organizationId.toString() !==
-        user.organizationId?.toString()
+        user.organizationId.toString()
       ) {
         throw new AppError(
           'Access group does not belong to your organization.',

@@ -2941,7 +2941,11 @@ After creating an organization, the **Super Admin** uses this API from the **Org
 
 ## Purpose
 
-Creates a new resource (e.g., room, lab, desk, equipment, vehicle, court, etc.) within the logged-in Space Admin's organization. This resource can later be used for bookings, calendars, and approvals.
+Creates a new resource (e.g., room, lab, desk, equipment, vehicle, court, etc.) within the logged-in Space Admin's organization. This resource can later be used for bookings, calendars, approvals, and resource management.
+
+A Space Admin **must belong to an organization** before creating resources. Space Admins without an assigned organization are not allowed to create resources.
+
+---
 
 ## Quick Reference
 
@@ -2954,6 +2958,8 @@ Creates a new resource (e.g., room, lab, desk, equipment, vehicle, court, etc.) 
 | Authentication | Yes |
 | Authorization | Yes (Space Admin) |
 | Tested By | Space Admin |
+
+---
 
 ## Authentication & Authorization
 
@@ -2969,6 +2975,20 @@ Creates a new resource (e.g., room, lab, desk, equipment, vehicle, court, etc.) 
 - ❌ Member
 - ❌ Guest
 
+---
+
+## Business Rules
+
+- A Space Admin must belong to an organization.
+- Resources are always created within the Space Admin's organization.
+- Resource names must be unique within the same organization.
+- Access Groups (if assigned) must belong to the same organization.
+- Invalid Access Group IDs are rejected.
+- Empty `accessGroupId` values are automatically stored as `null`.
+- All resource creation actions are recorded in the Audit Log.
+
+---
+
 ## Request Fields
 
 | Field | Type | Required | Description |
@@ -2982,7 +3002,9 @@ Creates a new resource (e.g., room, lab, desk, equipment, vehicle, court, etc.) 
 | `photoUrl` | String | ❌ No | Resource image URL. |
 | `requiresApproval` | Boolean | ❌ No | Whether booking requires approval. |
 | `bufferTime` | Number | ❌ No | Buffer time between bookings. |
-| `accessGroupId` | ObjectId | ❌ No | Assigned Access Group. |
+| `accessGroupId` | ObjectId | ❌ No | Assigned Access Group. Must belong to the same organization. |
+
+---
 
 ## Example Request
 
@@ -3004,9 +3026,12 @@ Content-Type: application/json
     "WiFi"
   ],
   "requiresApproval": true,
-  "bufferTime": 15
+  "bufferTime": 15,
+  "accessGroupId": "68860e000000000000000006"
 }
 ```
+
+---
 
 ## Example Responses
 
@@ -3018,10 +3043,11 @@ Content-Type: application/json
   "data": {
     "message": "Resource created successfully.",
     "resource": {
-      "_id": "6876...",
+      "_id": "6876abc123456789",
       "name": "Conference Room A",
       "type": "room",
-      "organizationId": "...",
+      "organizationId": "68860b000000000000000003",
+      "accessGroupId": "68860e000000000000000006",
       "capacity": 20,
       "requiresApproval": true,
       "bufferTime": 15,
@@ -3030,6 +3056,8 @@ Content-Type: application/json
   }
 }
 ```
+
+---
 
 ### ❌ 422 Validation Error
 
@@ -3043,6 +3071,36 @@ Content-Type: application/json
 }
 ```
 
+---
+
+### ❌ 422 Invalid Resource Type
+
+```json
+{
+  "success": false,
+  "error": {
+    "code": "INVALID_RESOURCE_TYPE",
+    "message": "Invalid resource type."
+  }
+}
+```
+
+---
+
+### ❌ 400 Invalid Access Group ID
+
+```json
+{
+  "success": false,
+  "error": {
+    "code": "INVALID_ID",
+    "message": "Invalid access group id."
+  }
+}
+```
+
+---
+
 ### ❌ 404 User Not Found
 
 ```json
@@ -3054,6 +3112,50 @@ Content-Type: application/json
   }
 }
 ```
+
+---
+
+### ❌ 404 Access Group Not Found
+
+```json
+{
+  "success": false,
+  "error": {
+    "code": "ACCESS_GROUP_NOT_FOUND",
+    "message": "Access group not found."
+  }
+}
+```
+
+---
+
+### ❌ 403 Organization Required
+
+```json
+{
+  "success": false,
+  "error": {
+    "code": "ORGANIZATION_REQUIRED",
+    "message": "You must belong to an organization before creating resources."
+  }
+}
+```
+
+---
+
+### ❌ 403 Access Group Belongs to Another Organization
+
+```json
+{
+  "success": false,
+  "error": {
+    "code": "FORBIDDEN",
+    "message": "Access group does not belong to your organization."
+  }
+}
+```
+
+---
 
 ### ❌ 409 Resource Exists
 
@@ -3067,6 +3169,8 @@ Content-Type: application/json
 }
 ```
 
+---
+
 ### ❌ 401 Unauthorized
 
 ```json
@@ -3079,21 +3183,38 @@ Content-Type: application/json
 }
 ```
 
-### ❌ 403 Forbidden
-
-```json
-{
-  "success": false,
-  "error": {
-    "code": "FORBIDDEN",
-    "message": "You are not authorized to perform this action."
-  }
-}
-```
+---
 
 ## Frontend Usage (According to PRD)
 
-Used by the **Space Admin** from the **Resource Management** page to create resources that members can later search, view in the calendar, and book.
+Used by the **Space Admin** from the **Resource Management** page to create resources that members can later:
+
+- Search
+- View in calendar
+- Book
+- Filter by access groups
+
+If the logged-in Space Admin is not assigned to any organization, the frontend should display:
+
+```text
+You must belong to an organization before creating resources.
+```
+
+and disable the resource creation process.
+
+---
+
+## Backend Review
+
+- ✅ Only Space Admins can create resources.
+- ✅ Organization membership is mandatory.
+- ✅ Resource names are unique within an organization.
+- ✅ Access Group validation is enforced.
+- ✅ Cross-organization resource creation is prevented.
+- ✅ Empty Access Groups are stored as `null`.
+- ✅ Audit logs are created.
+
+---
 
 ## Models Used
 
@@ -3101,8 +3222,6 @@ Used by the **Space Admin** from the **Resource Management** page to create reso
 - User
 - AuditLog
 - AccessGroup
-
-
 
 ---
 
