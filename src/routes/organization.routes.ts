@@ -8,6 +8,7 @@ import {
   removeUserFromOrganization,
   deleteOrganization,
   assignSpaceAdmin,
+  removeSpaceAdmin,
 } from '../controllers/organization.controller';
 
 import { protect } from '../middleware/auth';
@@ -55,7 +56,9 @@ router.patch(
   updateOrganization
 );
 
-//Remove user from Organization
+/**
+ * Remove User from Organization
+ */
 router.patch(
   '/remove-user-from-organization/:userId',
   protect,
@@ -81,6 +84,16 @@ router.post(
   protect,
   authorize('super_admin'),
   assignSpaceAdmin
+);
+
+/**
+ * Remove Space Admin
+ */
+router.patch(
+  '/:id/space-admin/:userId',
+  protect,
+  authorize('super_admin'),
+  removeSpaceAdmin
 );
 
 export default router;

@@ -493,3 +493,52 @@ export const removeUserFromOrganization = async (
     next(err);
   }
 };
+
+
+/**
+ * PATCH /api/organizations/:id/space-admin/:userId
+ * Super Admin
+ */
+export const removeSpaceAdmin = async (
+  req: AuthRequest,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const id = req.params.id.toString();
+    const userId = req.params.userId.toString();
+
+    if (!mongoose.Types.ObjectId.isValid(id) || !mongoose.Types.ObjectId.isValid(userId)) {
+      throw new AppError('Invalid id.', 400, 'INVALID_ID');
+    }
+
+    const user = await User.findById(userId);
+
+    if (!user) {
+      throw new AppError('User not found.', 404, 'USER_NOT_FOUND');
+    }
+
+    if (!user.organizationId || user.organizationId.toString() !== id) {
+      throw new AppError('User does not belong to this organization.', 400, 'INVALID_USER');
+    }
+
+    user.organizationId = undefined;
+    await user.save();
+
+    await AuditLog.create({
+      userId: req.userId,
+      action: 'Remove Space Admin',
+      module: 'Organization',
+      entityId: id,
+      description: `Removed space admin "${user.name}" (${user.email}).`,
+      ipAddress: req.ip,
+    });
+
+    sendSuccess(res, {
+      message: 'Space Admin removed successfully.',
+      user,
+    });
+  } catch (err) {
+    next(err);
+  }
+};
